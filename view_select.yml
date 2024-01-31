@@ -1,0 +1,7 @@
+name: view_select
+channels:
+  - defaults
+dependencies:
+  - python
+  - matplotlib
+
