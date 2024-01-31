@@ -181,7 +181,7 @@ class CryosparcDataset:
     def open_filepicker(self, event, file_picker_queue):
         file_path = filedialog.askopenfilename(title="Select a cryosparc file",
                                                filetypes=[("Cryosparc group file", "*.csg"), ("Cryosparc data file", "*.cs"), ("All files", "*.*")])
-        if file_path != None:
+        if file_path != '':
             print("Selected file:", file_path)
             self.dataset_path = file_path
             p.o_button.set_active(False)
