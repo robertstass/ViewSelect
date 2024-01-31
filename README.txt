@@ -30,7 +30,7 @@ pip install -r requirements.txt
 (optionally) export PATH=<path_to>/ViewSelect:$PATH
 
 Then it can be run using
-"conda active view_select" followed by "python view_select.py"
+"conda activate view_select" followed by "python view_select.py"
 
 Why do this?
 For small and/or featureless samples, it is common to get one or two views that dominate all others resulting
