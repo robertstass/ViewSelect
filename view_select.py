@@ -186,7 +186,7 @@ class CryosparcDataset:
         file_path = filedialog.askopenfilename(title="Select a cryosparc file",
                                                filetypes=[("Cryosparc group file", "*.csg"), ("Cryosparc data file", "*.cs"), ("All files", "*.*")])
         if not (file_path == '' or file_path == () or file_path == [] or file_path == None):
-            print("Selected file:", file_path)
+            print_text("Selected file: %s" % file_path)
             self.dataset_path = file_path
             p.o_button.set_active(False)
             p.o_button_ax.set_visible(False)
@@ -234,14 +234,12 @@ class CustomTransform(Transform):
         y = np.sin(coords[:,0]) * np.cos(coords[:,1])
         z = np.sin(coords[:,1])
         viewdirs = np.column_stack((x, y, z))
-        #reverse_matrix = np.linalg.inv(self.rotation_matrix)
-        reverse_matrix = np.matmul(self.orig_rotation_matrix, self.rotation_matrix)
-        reverse_matrix = np.matmul(reverse_matrix, self.orig_rotation_matrix)
+        reverse_matrix = np.matmul(np.linalg.inv(self.orig_rotation_matrix), self.rotation_matrix)
         viewdirs = np.matmul(viewdirs, reverse_matrix)
         az = np.arctan2(viewdirs[:, 1], viewdirs[:, 0])
-        az = ((az+2*np.pi) % (2*np.pi))-(2*np.pi)
+        az = np.unwrap(az, discont=np.pi)
         el = np.arcsin(viewdirs[:, 2])
-        #az, el = get_azimuth_elevation(viewdirs)
+        #el = np.unwrap(el, discont=-np.pi/2.0)
         coords = np.column_stack((az,el))
         return coords
 
@@ -333,6 +331,63 @@ def expmap(e, out=None):
     out[zero_mask, 2, :2] = 0
 
     return out
+
+
+def matrix_from_euler(eulers, radians=False): # Create a rotation matrix from three Euler angles in ZYZ convention
+    # eulers = [[rot, tilt, psi]]
+    if eulers is not isinstance(eulers, np.ndarray):
+        eulers = np.array(eulers)
+    if eulers.ndim == 1:
+        eulers = np.expand_dims(eulers, 0)
+        one = True
+    else:
+        one = False
+    num_items = eulers.shape[0]
+    if radians == False:
+        eulers = np.radians(eulers)
+    m = np.zeros((num_items,3,3))
+    m[:,0,0] = np.cos(eulers[:,2]) * np.cos(eulers[:,1]) * np.cos(eulers[:,0]) - np.sin(eulers[:,2]) * np.sin(eulers[:,0])
+    m[:,0,1] = np.cos(eulers[:,2]) * np.cos(eulers[:,1]) * np.sin(eulers[:,0]) + np.sin(eulers[:,2]) * np.cos(eulers[:,0])
+    m[:,0,2] = -np.cos(eulers[:,2]) * np.sin(eulers[:,1])
+    m[:,1,0] = -np.sin(eulers[:,2]) * np.cos(eulers[:,1]) * np.cos(eulers[:,0]) - np.cos(eulers[:,2]) * np.sin(eulers[:,0])
+    m[:,1,1] = -np.sin(eulers[:,2]) * np.cos(eulers[:,1]) * np.sin(eulers[:,0]) + np.cos(eulers[:,2]) * np.cos(eulers[:,0])
+    m[:,1,2] = np.sin(eulers[:,2]) * np.sin(eulers[:,1])
+    m[:,2,0] = np.sin(eulers[:,1]) * np.cos(eulers[:,0])
+    m[:,2,1] = np.sin(eulers[:,1]) * np.sin(eulers[:,0])
+    m[:,2,2] = np.cos(eulers[:,1])
+    if one:
+        m = np.squeeze(m, axis=0)
+    return m
+
+def euler_from_matrix(matrix, radians=False): #converts a matrix to Eulers
+    if matrix is not isinstance(matrix, np.ndarray):
+        matrix = np.array(matrix)
+    if matrix.ndim == 2:
+        matrix = np.expand_dims(matrix, 0)
+        one = True
+    else:
+        one = False
+    num_items = matrix.shape[0]
+    eulers = np.zeros((num_items, 3))
+
+    #tilt (0 to 180)
+    eulers[:,1] = np.arccos(np.clip(matrix[:,2,2],-1.0,1.0))
+    zero_mask = eulers[:,1] < 1e-16 #0.00001
+    nonzero_mask = ~zero_mask
+
+    #rot (-180 to 180)
+    eulers[zero_mask, 0] = 0.0
+    eulers[nonzero_mask, 0] = np.arctan2(matrix[nonzero_mask,2,1], matrix[nonzero_mask,2,0])
+
+    #psi (-180 to 180)
+    eulers[zero_mask, 2] = np.arctan2(-matrix[zero_mask,1,0], matrix[zero_mask,0,0])
+    eulers[nonzero_mask, 2] = np.arctan2(matrix[nonzero_mask,1,2], -matrix[nonzero_mask,0,2])
+
+    if radians == False:
+        eulers = np.degrees(eulers)
+    if one:
+        eulers = np.squeeze(eulers, axis=0)
+    return eulers
 
 def identity_matrix():
     return np.eye(3)
@@ -493,11 +548,14 @@ def output_cs():
         p.radio_buttons_visible = 1 if p.radio_buttons_visible == 0 else p.radio_buttons_visible
         for group in range(0,p.radio_buttons_visible):
             selected = np.zeros(cs.num_particles)
-            for ellipse in p.ellipse_groups[group]:
-                xy = p.hb.get_offsets()
-                center = ellipse.center
-                result = are_points_inside_ellipse(p.az, p.el, ellipse.center, ellipse.width, ellipse.height, ellipse.angle)
-                selected = np.logical_or(selected, result)
+            for ellipse_triplet in p.ellipse_groups[group]:
+                #xy = p.hb.get_offsets()
+                #center = ellipse.center
+                for ellipse in ellipse_triplet:
+                    #result = are_points_inside_ellipse(p.az, p.el, ellipse.center, ellipse.width, ellipse.height, ellipse.angle)
+                    #selected = np.logical_or(selected, result)
+                    result = ellipse.get_path().contains_points(np.column_stack((p.az, p.el)))
+                    selected = np.logical_or(selected, result)
             if np.all(selected == False):
                 continue
             for group_selection in group_selections: #overlapping particles default to the earliest group drawn
@@ -586,25 +644,66 @@ def print_text(text, terminal_only=False, color=None):
 def undo(event):
     last_group = p.ellipse_log[-1]
     if len(p.ellipse_groups[last_group]) != 0:
-        ell = p.ellipse_groups[last_group][-1]
-        ell.remove()
+        ellipse_triplet = p.ellipse_groups[last_group][-1]
+        [ell.remove() for ell in ellipse_triplet]
         del p.ellipse_groups[last_group][-1]
         del p.ellipse_log[-1]
     if len(p.ellipse_log) == 0:
         p.u_button.set_active(False)
     p.fig.canvas.draw()
 
-def rotate_plot(event, axis, angle, plot_data_queue, p):
-    if axis == 'x':
-        rotation_matrix = Rx(int(angle))
-    elif axis == 'y':
-        rotation_matrix = Ry(int(angle))
-    elif axis == 'z':
-        rotation_matrix = Rz(int(angle))
+def rotate_plot(event, euler_name, angle, plot_data_queue, p):
+    [button.set_active(False) for button in p.euler_buttons]
+    rot  = p.rot
+    tilt = p.tilt
+    psi = p.psi
+    rot_min = -180.0
+    rot_max = 180.0
+    tilt_min = 0.0
+    tilt_max = 180.0
+    psi_min = -180.0
+    psi_max = 180.0
+    if euler_name == 'rot':
+        rot += angle
+        if rot <= rot_min:
+            rot = rot_min
+            print_text('Rot must be within %d and %d degrees.' % (rot_min, rot_max))
+        elif rot >= rot_max:
+            rot = rot_max
+            print_text('Rot must be within %d and %d degrees.' % (rot_min, rot_max))
+    elif euler_name == 'tilt':
+        tilt += angle
+        if tilt <= tilt_min:
+            tilt = tilt_min
+            print_text('Tilt must be within %d and %d degrees.' % (tilt_min, tilt_max))
+        elif tilt >= tilt_max:
+            tilt = tilt_max
+            print_text('Tilt must be within %d and %d degrees.' % (tilt_min, tilt_max))
+    elif euler_name == 'psi':
+        psi += angle
+        if psi <= psi_min:
+            psi = psi_min
+            print_text('Psi must be within %d and %d degrees.' % (psi_min, psi_max))
+        elif psi >= psi_max:
+            psi = psi_max
+            print_text('Psi must be within %d and %d degrees.' % (psi_min, psi_max))
     else:
-        raise ValueError('Unsupported axis %s' % str(axis))
-    p.az, p.el = calculate_plot(cs.particles_dset, rotation_matrix)
-    plot_data_queue.put("Plot ready")
+        raise ValueError('Unsupported euler_name %s' % str(euler_name))
+    if not (rot == p.rot and tilt == p.tilt and psi == p.psi):
+        p.rot = rot
+        p.tilt = tilt
+        p.psi = psi
+        p.rot_text.set_text('Rot(z) %d°' % p.rot)
+        p.tilt_text.set_text('Tilt(y) %d°' % p.tilt)
+        p.psi_text.set_text('Psi(z) %d°' % p.psi)
+        rotation_matrix = matrix_from_euler([rot, tilt, psi])
+        p.az, p.el = calculate_plot(cs.particles_dset, rotation_matrix)
+        plot_data_queue.put("Plot ready")
+    else:
+        p.rot = rot
+        p.tilt = tilt
+        p.psi = psi
+        [button.set_active(True) for button in p.euler_buttons]
 
 def update_ellipse_plots(p):
     current_rotation_matrix = p.rotation_matrix
@@ -612,15 +711,12 @@ def update_ellipse_plots(p):
         for ellipse_triplet in ellipse_group:
             ellipse = ellipse_triplet[1]
             ell_rotation_matrix = ellipse.rotation_matrix_when_drawn
-            path = ellipse.get_path()
             ellipse.set_path(ellipse.orig_ellipse_path)
             path = ellipse.get_path()
-            print(ell_rotation_matrix)
-            print(current_rotation_matrix)
-            #transform_rotation_matrix = np.matmul(ell_rotation_matrix, current_rotation_matrix)
-            #current_rotation_matrix = np.linalg.inv(current_rotation_matrix)
+            print(path)
             custom_transform_obj = CustomTransform(ell_rotation_matrix, current_rotation_matrix)
             new_path = custom_transform_obj.transform_path(path)
+            print(new_path)
             ellipse.set_path(new_path)
             ellipse.remove()
             p.ax.add_patch(ellipse)
@@ -635,7 +731,7 @@ def calculate_plot(particles_dset, rotation_matrix=None):
     print_text('Calculating plot...')
     poses = np.array(particles_dset['alignments3D/pose'])
     if rotation_matrix is not None:
-        rotation_matrix = np.matmul(p.rotation_matrix, rotation_matrix)
+        #rotation_matrix = np.matmul(p.rotation_matrix, rotation_matrix)
         p.rotation_matrix = rotation_matrix
     viewdirs = get_viewdir(poses, rotation_matrix)
     az, el = get_azimuth_elevation(viewdirs)
@@ -670,9 +766,11 @@ def plot_data(p, plot_data_queue):
             update_ellipse_plots(p)
             p.canvas.draw()
             p.f_button.set_active(True)
-            p.x_neg_90_button.set_active(True)
+            [button.set_active(True) for button in p.euler_buttons]
             print_text('Done.')
             print_text('Draw an ellipse and hit enter (or click save selection).')
+            if old_hb is None:
+                simuluate_ellipses_test()
             if supports_rotation:
                 print_text('(You can rotate with left and right arrow keys).')
             root.after(100, lambda: plot_data(p, plot_data_queue))
@@ -687,6 +785,24 @@ def output_finished(output_queue):
             print_text('Finished!')
     except queue.Empty:
         root.after(100, lambda: output_finished(output_queue))
+
+def simuluate_ellipses_test(): #for testing only
+    import time
+    ellipses = [(-3.00984, -2.432200, 0.094789, 0.82602, 0.0),
+    (-0.90194, -0.36483, 0.13541, 0.77185, 0.0),
+    (1.155295, 1.78361, 0.12187, 0.8260, 0.0),
+    (-2.01669, -1.327, -0.78539, -0.05416,0.0),
+    (0.06080, 0.770196, -0.8260, 0.02708, 0.0),
+    (2.2295, 2.8274, -0.7989, -0.05416, 0.0)]
+    for ellipse in ellipses:
+        p.selector.extents=ellipse[0:4]
+        p.selector.rotation = ellipse[4]
+        time.sleep(0.5)
+        add_selection(None)
+        time.sleep(0.5)
+        add_selection_group(None)
+    p.selector.clear_all()
+    p.canvas.draw()
 
 
 if __name__ == "__main__":
@@ -744,6 +860,10 @@ if __name__ == "__main__":
 
     p.group_cmap = group_cmap
     p.rotation_matrix = identity_matrix()
+    p.rot = 0.0
+    p.tilt = 0.0
+    p.psi = 0.0
+    p.angle_step = 90
 
     p.selector = OffsetEllipseSelector(np.pi*2, ax, select_callback, useblit=True, button=[1], minspanx=5, minspany=5, spancoords='pixels',
         props={'facecolor': group_cmap(0), 'edgecolor': group_cmap(0), 'alpha': 0.3, 'fill': True},
@@ -758,30 +878,60 @@ if __name__ == "__main__":
 
     # Buttons
     plt.subplots_adjust(bottom=0.3)
-    as_button_ax = fig.add_axes([0.1, 0.05, 0.13, 0.05])  # [left, bottom, width, height]
+    as_button_ax = fig.add_axes([0.1, 0.04, 0.13, 0.05])  # [left, bottom, width, height]
     p.as_button = plt.Button(as_button_ax, 'Save selection')
     p.as_button.on_clicked(add_selection)
     p.as_button.set_active(False)
 
-    ag_button_ax = fig.add_axes([0.25, 0.05, 0.13, 0.05])  # [left, bottom, width, height]
+    ag_button_ax = fig.add_axes([0.25, 0.04, 0.13, 0.05])  # [left, bottom, width, height]
     p.ag_button = plt.Button(ag_button_ax, 'New group')
     p.ag_button.on_clicked(add_selection_group)
     p.ag_button.set_active(False)
 
-    u_button_ax = fig.add_axes([0.40, 0.05, 0.13, 0.05])  # [left, bottom, width, height]
+    u_button_ax = fig.add_axes([0.40, 0.04, 0.13, 0.05])  # [left, bottom, width, height]
     p.u_button = plt.Button(u_button_ax, 'Undo')
     p.u_button.on_clicked(undo)
     p.u_button.set_active(False)
 
-    f_button_ax = fig.add_axes([0.55, 0.05, 0.13, 0.05])  # [left, bottom, width, height]
+    f_button_ax = fig.add_axes([0.55, 0.04, 0.13, 0.05])  # [left, bottom, width, height]
     p.f_button = plt.Button(f_button_ax, 'Finish')
     p.f_button.on_clicked(finish)
     p.f_button.set_active(False)
 
-    x_neg_90_button_ax = fig.add_axes([0.02, 0.8, 0.08, 0.05])  # [left, bottom, width, height]
-    p.x_neg_90_button = plt.Button(x_neg_90_button_ax, 'Rot x -90')
-    p.x_neg_90_button.on_clicked(lambda event: rotate_plot(event, 'x', -90, plot_data_queue, p))
-    p.x_neg_90_button.set_active(False)
+    rot_neg_button_ax = fig.add_axes([0.18, 0.12, 0.04, 0.05])  # [left, bottom, width, height]
+    p.rot_neg_button = plt.Button(rot_neg_button_ax, '-rot')
+    p.rot_neg_button.on_clicked(lambda event: rotate_plot(event, 'rot', -p.angle_step, plot_data_queue, p))
+    p.rot_neg_button.set_active(False)
+
+    rot_pos_button_ax = fig.add_axes([0.23, 0.12, 0.04, 0.05])  # [left, bottom, width, height]
+    p.rot_pos_button = plt.Button(rot_pos_button_ax, '+rot')
+    p.rot_pos_button.on_clicked(lambda event: rotate_plot(event, 'rot', p.angle_step, plot_data_queue, p))
+    p.rot_pos_button.set_active(False)
+    p.rot_text = plt.text(0.1, 0.15, 'Rot(z) %d°' % p.rot, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
+
+    tilt_neg_button_ax = fig.add_axes([0.43, 0.12, 0.04, 0.05])  # [left, bottom, width, height]
+    p.tilt_neg_button = plt.Button(tilt_neg_button_ax, '-tilt')
+    p.tilt_neg_button.on_clicked(lambda event: rotate_plot(event, 'tilt', -p.angle_step, plot_data_queue, p))
+    p.tilt_neg_button.set_active(False)
+
+    tilt_pos_button_ax = fig.add_axes([0.48, 0.12, 0.04, 0.05])  # [left, bottom, width, height]
+    p.tilt_pos_button = plt.Button(tilt_pos_button_ax, '+tilt')
+    p.tilt_pos_button.on_clicked(lambda event: rotate_plot(event, 'tilt', p.angle_step, plot_data_queue, p))
+    p.tilt_pos_button.set_active(False)
+    p.tilt_text = plt.text(0.35, 0.15, 'Tilt(y) %d°' % p.tilt, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
+
+    psi_neg_button_ax = fig.add_axes([0.68, 0.12, 0.04, 0.05])  # [left, bottom, width, height]
+    p.psi_neg_button = plt.Button(psi_neg_button_ax, '-psi')
+    p.psi_neg_button.on_clicked(lambda event: rotate_plot(event, 'psi', -p.angle_step, plot_data_queue, p))
+    p.psi_neg_button.set_active(False)
+
+    psi_pos_button_ax = fig.add_axes([0.73, 0.12, 0.04, 0.05])  # [left, bottom, width, height]
+    p.psi_pos_button = plt.Button(psi_pos_button_ax, '+psi')
+    p.psi_pos_button.on_clicked(lambda event: rotate_plot(event, 'psi', p.angle_step, plot_data_queue, p))
+    p.psi_pos_button.set_active(False)
+    p.psi_text = plt.text(0.6, 0.15, 'Psi(z) %d°' % p.psi, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
+
+    p.euler_buttons = [p.rot_neg_button, p.rot_pos_button, p.tilt_neg_button, p.tilt_pos_button, p.psi_neg_button, p.psi_pos_button]
 
     
 
