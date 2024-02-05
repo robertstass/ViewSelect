@@ -12,6 +12,10 @@ import matplotlib as mpl
 from cycler import cycler
 from matplotlib import pyplot as plt
 from matplotlib.widgets import  EllipseSelector, Slider, Button, RadioButtons, TextBox
+from matplotlib.transforms import Transform
+import matplotlib.patches as patches
+from matplotlib.path import Path
+from matplotlib.transforms import Affine2D
 
 import tkinter as tk
 from tkinter import scrolledtext
@@ -199,6 +203,91 @@ class PlotObjects:
         #self.current_group = 0
         self.max_groups = 10
 
+class CustomEllipse(mpl.patches.PathPatch):
+    def __init__(self, center, width, height, angle=0.0, rotation_matrix_when_drawn=None, **kwargs):
+
+        self.center = center
+        self.width = width
+        self.height = height
+        self.angle = angle
+        self.rotation_matrix_when_drawn = rotation_matrix_when_drawn
+
+        ellipse_path = Path.unit_circle()
+        transformation = Affine2D().scale(self.width / 2, self.height / 2).rotate_deg(self.angle).translate(
+            self.center[0], self.center[1])
+        self.orig_ellipse_path = ellipse_path.transformed(transformation)
+
+        # Create a Path with the transformed ellipse path
+        super().__init__(self.orig_ellipse_path, **kwargs)
+
+
+
+class CustomTransform(Transform):
+    def __init__(self, orig_rotation_matrix, rotation_matrix):
+        Transform.__init__(self)
+        self.orig_rotation_matrix = orig_rotation_matrix
+        self.rotation_matrix = rotation_matrix
+
+    def transform_non_affine(self, coords):
+        #az = coords[:,0], el = coords[:,1]
+        x = np.cos(coords[:,0]) * np.cos(coords[:,1])
+        y = np.sin(coords[:,0]) * np.cos(coords[:,1])
+        z = np.sin(coords[:,1])
+        viewdirs = np.column_stack((x, y, z))
+        #reverse_matrix = np.linalg.inv(self.rotation_matrix)
+        reverse_matrix = np.matmul(self.orig_rotation_matrix, self.rotation_matrix)
+        reverse_matrix = np.matmul(reverse_matrix, self.orig_rotation_matrix)
+        viewdirs = np.matmul(viewdirs, reverse_matrix)
+        az = np.arctan2(viewdirs[:, 1], viewdirs[:, 0])
+        az = ((az+2*np.pi) % (2*np.pi))-(2*np.pi)
+        el = np.arcsin(viewdirs[:, 2])
+        #az, el = get_azimuth_elevation(viewdirs)
+        coords = np.column_stack((az,el))
+        return coords
+
+
+class OffsetEllipseSelector(EllipseSelector):
+    def __init__(self, offset, ax, onselect, **kwargs):
+            self.offset = offset
+            self.offset_ellipse1 = None
+            self.offset_ellipse2 = None
+            self.onselect_func = onselect
+            super().__init__(ax, self.onselect, **kwargs)
+
+
+    def onselect(self, eclick, erelease):
+        self.onselect_func(eclick, erelease)
+        if self.offset_ellipse1:
+            self.offset_ellipse1.remove()
+        if self.offset_ellipse2:
+            self.offset_ellipse2.remove()
+        #super().onselect(eclick, erelease)
+        offset = self.offset
+
+        x1, x2, y1, y2 = self.extents
+        if supports_rotation:
+            angle = self.rotation
+        else:
+            angle = 0.0
+        if not (x1 == 0.0 and x2 == 0.0 and y1 == 0.0 and y2 == 0.0):
+            if not ((x1 == x2) and (y1 == y2)):
+                # Create and draw an offset ellipse
+                self.offset_ellipse1 = mpl.patches.Ellipse(((x1 + (x2 - x1) / 2.) - offset, y1 + (y2 - y1) / 2.), x2 - x1, y2 - y1, angle=angle, **self._props)
+                self.offset_ellipse2 = mpl.patches.Ellipse(((x1 + (x2 - x1) / 2.) + offset, y1 + (y2 - y1) / 2.), x2 - x1, y2 - y1, angle=angle, **self._props)
+                self.ax.add_patch(self.offset_ellipse1)
+                self.ax.add_patch(self.offset_ellipse2)
+                #p.canvas.draw()
+                #self.offset_ellipse1 = None  # Reset offset ellipse after selection
+                #self.offset_ellipse1 = None
+    def clear_all(self):
+        self.clear()
+        if self.offset_ellipse1:
+            self.offset_ellipse1.remove()
+        if self.offset_ellipse2:
+            self.offset_ellipse2.remove()
+        self.offset_ellipse1 = None
+        self.offset_ellipse2 = None
+
 
 
 def expmap(e, out=None):
@@ -245,17 +334,36 @@ def expmap(e, out=None):
 
     return out
 
+def identity_matrix():
+    return np.eye(3)
 
+def Rx(theta):
+    return np.array([[1, 0, 0],
+                      [0, math.cos(theta), -math.sin(theta)],
+                      [0, math.sin(theta), math.cos(theta)]])
 
-def get_viewdir(poses):
+def Ry(theta):
+    return np.array([[math.cos(theta), 0, math.sin(theta)],
+                      [0, 1, 0],
+                      [-math.sin(theta), 0, math.cos(theta)]])
+
+def Rz(theta):
+    return np.array([[math.cos(theta), -math.sin(theta), 0],
+                      [math.sin(theta), math.cos(theta), 0],
+                      [0, 0, 1]])
+
+def get_viewdir(poses, rotation_matrix=None):
     Rs = expmap(poses)
+    if rotation_matrix is not None:
+        Rs = np.matmul(Rs, rotation_matrix)
     viewdirs = Rs[:,2]
     return viewdirs
 
 def get_azimuth_elevation(viewdirs):
-    viewdirs_azimuth = np.arctan2( viewdirs[:, 1], viewdirs[:, 0])
-    viewdirs_elevation = np.arcsin( viewdirs[:, 2])
-    return viewdirs_azimuth, viewdirs_elevation
+    azimuth = np.arctan2(viewdirs[:, 1], viewdirs[:, 0])
+    elevation = np.arcsin(viewdirs[:, 2])
+    return azimuth, elevation
+
 
 
 
@@ -293,11 +401,17 @@ def add_selection(event):
         angle = 0.0
     if not (x1 == 0.0 and x2 == 0.0 and y1 == 0.0 and y2 == 0.0):
         if not ((x1 == x2) and (y1 == y2)):
-            ell = mpl.patches.Ellipse((x1+(x2-x1)/2.,y1+(y2-y1)/2.),x2-x1,y2-y1,angle=angle, fill=None, edgecolor=p.group_cmap(current_group), linewidth=6)
-            p.ax.add_patch(ell)
+            ellipse_triplet = [None, None, None]
+            #ell = mpl.patches.Ellipse((x1+(x2-x1)/2.,y1+(y2-y1)/2.),x2-x1,y2-y1,angle=angle, fill=None, edgecolor=p.group_cmap(current_group), linewidth=6)
+            for i,ellipse in enumerate(ellipse_triplet):
+                offset = (i-1)*p.selector.offset
+                ell = CustomEllipse(((x1+(x2-x1)/2.)+offset,y1+(y2-y1)/2.),x2-x1,y2-y1, angle=angle, fill=None, edgecolor=p.group_cmap(current_group), linewidth=6)
+                ell.rotation_matrix_when_drawn = p.rotation_matrix
+                p.ax.add_patch(ell)
+                ellipse_triplet[i] = ell
             p.selector.extents = (0,0,0,0)
-            p.selector.clear()
-            p.ellipse_groups[current_group].append(ell)
+            p.selector.clear_all()
+            p.ellipse_groups[current_group].append(ellipse_triplet)
             p.ellipse_log.append(current_group)
             p.ag_button.set_active(True)
             p.f_button.set_active(True)
@@ -480,12 +594,50 @@ def undo(event):
         p.u_button.set_active(False)
     p.fig.canvas.draw()
 
+def rotate_plot(event, axis, angle, plot_data_queue, p):
+    if axis == 'x':
+        rotation_matrix = Rx(int(angle))
+    elif axis == 'y':
+        rotation_matrix = Ry(int(angle))
+    elif axis == 'z':
+        rotation_matrix = Rz(int(angle))
+    else:
+        raise ValueError('Unsupported axis %s' % str(axis))
+    p.az, p.el = calculate_plot(cs.particles_dset, rotation_matrix)
+    plot_data_queue.put("Plot ready")
 
+def update_ellipse_plots(p):
+    current_rotation_matrix = p.rotation_matrix
+    for ellipse_group in p.ellipse_groups:
+        for ellipse_triplet in ellipse_group:
+            ellipse = ellipse_triplet[1]
+            ell_rotation_matrix = ellipse.rotation_matrix_when_drawn
+            path = ellipse.get_path()
+            ellipse.set_path(ellipse.orig_ellipse_path)
+            path = ellipse.get_path()
+            print(ell_rotation_matrix)
+            print(current_rotation_matrix)
+            #transform_rotation_matrix = np.matmul(ell_rotation_matrix, current_rotation_matrix)
+            #current_rotation_matrix = np.linalg.inv(current_rotation_matrix)
+            custom_transform_obj = CustomTransform(ell_rotation_matrix, current_rotation_matrix)
+            new_path = custom_transform_obj.transform_path(path)
+            ellipse.set_path(new_path)
+            ellipse.remove()
+            p.ax.add_patch(ellipse)
+            for i, offset_ellipse in enumerate([ellipse_triplet[0], ellipse_triplet[2]]):
+                offset = -p.selector.offset if i ==0 else p.selector.offset
+                offset_path = new_path.transformed(Affine2D().translate(offset,0))
+                offset_ellipse.set_path(offset_path)
+                offset_ellipse.remove()
+                p.ax.add_patch(offset_ellipse)
 
-def calculate_plot(particles_dset):
+def calculate_plot(particles_dset, rotation_matrix=None):
     print_text('Calculating plot...')
     poses = np.array(particles_dset['alignments3D/pose'])
-    viewdirs = get_viewdir(poses)
+    if rotation_matrix is not None:
+        rotation_matrix = np.matmul(p.rotation_matrix, rotation_matrix)
+        p.rotation_matrix = rotation_matrix
+    viewdirs = get_viewdir(poses, rotation_matrix)
     az, el = get_azimuth_elevation(viewdirs)
     return az,el
 
@@ -495,7 +647,6 @@ def generate_plot(cs, p, plot_data_queue, file_picker_queue):
         if cs.dataset_path == None:
             print_text('Open input file. (you can also pass a file directly on the command line).')
         cs.dataset_path = file_picker_queue.get()
-        #print_text('Reading input file...')
         particles_dset = cs.load_dataset()
         p.az,p.el = calculate_plot(particles_dset)
         plot_data_queue.put("Plot ready")
@@ -510,14 +661,21 @@ def plot_data(p, plot_data_queue):
         queue_readout = plot_data_queue.get_nowait()
         if queue_readout == "Plot ready":
             print_text('Plotting...')
+            old_hb = p.hb if hasattr(p,'hb') else None
             p.hb = p.ax.hexbin(p.az, p.el, gridsize=50, bins='log', cmap='jet')
+            if hasattr(p,'cb'):
+                p.cb.remove()
+            old_hb.remove() if old_hb != None else None
             p.cb = p.plt.colorbar(p.hb, ax=p.ax, label='# of images')
+            update_ellipse_plots(p)
             p.canvas.draw()
             p.f_button.set_active(True)
+            p.x_neg_90_button.set_active(True)
             print_text('Done.')
             print_text('Draw an ellipse and hit enter (or click save selection).')
             if supports_rotation:
                 print_text('(You can rotate with left and right arrow keys).')
+            root.after(100, lambda: plot_data(p, plot_data_queue))
     except queue.Empty:
         root.after(100, lambda: plot_data(p, plot_data_queue))
 
@@ -585,12 +743,14 @@ if __name__ == "__main__":
     p = PlotObjects(fig, root, canvas, plt, ax)
 
     p.group_cmap = group_cmap
+    p.rotation_matrix = identity_matrix()
 
-    p.selector = EllipseSelector(ax, select_callback, useblit=True, button=[1], minspanx=5, minspany=5, spancoords='pixels',
+    p.selector = OffsetEllipseSelector(np.pi*2, ax, select_callback, useblit=True, button=[1], minspanx=5, minspany=5, spancoords='pixels',
         props={'facecolor': group_cmap(0), 'edgecolor': group_cmap(0), 'alpha': 0.3, 'fill': True},
         ignore_event_outside=False, interactive=True)
     #p.selector.state_modifier_keys["rotate"] = 'alt'
     supports_rotation = True if hasattr(p.selector, 'rotation') else False
+    #p.selector.
 
     p.ellipse_groups = []
     p.ellipse_groups.append([])
@@ -617,6 +777,11 @@ if __name__ == "__main__":
     p.f_button = plt.Button(f_button_ax, 'Finish')
     p.f_button.on_clicked(finish)
     p.f_button.set_active(False)
+
+    x_neg_90_button_ax = fig.add_axes([0.02, 0.8, 0.08, 0.05])  # [left, bottom, width, height]
+    p.x_neg_90_button = plt.Button(x_neg_90_button_ax, 'Rot x -90')
+    p.x_neg_90_button.on_clicked(lambda event: rotate_plot(event, 'x', -90, plot_data_queue, p))
+    p.x_neg_90_button.set_active(False)
 
     
 
