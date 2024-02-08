@@ -36,8 +36,8 @@ import yaml
 import warnings
 warnings.filterwarnings("ignore", category=MatplotlibDeprecationWarning)
 
-#import matplotlib as mpl
-#mpl.use("Qt5Agg")
+from matplotlib import use as Use
+Use("TkAgg")
 
 
 
@@ -578,6 +578,7 @@ def finish(event):
         p.ag_button.set_active(False)
         p.f_button.set_active(False)
         p.u_button.set_active(False)
+        [button.set_active(False) for button in p.euler_buttons]
         p.finished = True
         output_thread.start()
 
@@ -992,6 +993,7 @@ def output_finished(output_queue):
         if queue_readout == 'Finished!':
             print_text('Finished!')
             output_thread.join(timeout=0.3)
+            [button.set_active(True) for button in p.euler_buttons]
     except queue.Empty:
         root.after(100, lambda: output_finished(output_queue))
 
@@ -1003,7 +1005,8 @@ def on_close_window():
         thread.join(timeout=2)
     if output_thread.is_alive():
         output_thread.join(timeout=2)
-    root.destroy()
+    #root.destroy()
+    root.quit()
 
 def simuluate_ellipses_test(): #for testing only
     ellipses = [(-3.00984, -2.432200, 0.094789, 0.82602, 0.0),
