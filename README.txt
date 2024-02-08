@@ -41,4 +41,19 @@ to this which is to generate a .bild file for viewing in chimera using pyem (htt
 However, "View Select" allows the user to select particles from the plot that can then be used for further 2D classification
 and/or particle picking with tools like Topaz.
 
+Further details:
+To use, draw one or more circles on the plot. If you click "New group" you can then draw more circles that are ultimately
+saved into separate files. Use this to select different views. If two groups overlap each other, the overlapping particles
+default to lower numbered groups. A separate file is saved which contains the remaining unselected particles. Click finish
+to save the output. If you click finish without any selections, an image of the plot is saved.
+
+Re-import .csg files into cryosparc with the Import Result Group job.
+
+The values of rot, tilt and psi refer to euler angles in the relion convention, which are sequential rotations around the
+z, y and z axis respectively. These euler angles have the effect of rotating the 3D map before generating the viewing
+direction plot. It is helpful for selecting hotspots that have become distorted at the top and bottom of the plot.
+
+The colors used can be customized for accessibility or aesthetic reasons using the --plot_cmap and --group_cmap command
+line options.
+
 Written by Robert Stass, Bowden group, STRUBI/OPIC (2024)

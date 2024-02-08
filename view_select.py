@@ -3,34 +3,40 @@ import os
 import sys
 import math
 import numpy as np
-import threading
 from threading import Thread, Event
-import argparse
 import queue
+import argparse
 import copy
 import time
 
-import matplotlib as mpl
-from cycler import cycler
+
+from matplotlib import MatplotlibDeprecationWarning
 from matplotlib import pyplot as plt
-from matplotlib.widgets import  EllipseSelector, Slider, Button, RadioButtons, TextBox
+from matplotlib.widgets import EllipseSelector, RadioButtons
 from matplotlib.transforms import Transform
 import matplotlib.patches as patches
 from matplotlib.path import Path
 from matplotlib.transforms import Affine2D
 from matplotlib.lines import Line2D
+try:
+    from matplotlib import colormaps as cm
+except AttributeError:
+    from matplotlib import cm as cm
+
 
 import tkinter as tk
 from tkinter import scrolledtext
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tkinter import filedialog
 
-from cryosparc.tools import CryoSPARC
+#from cryosparc.tools import CryoSPARC
 from cryosparc.dataset import Dataset
 import yaml
 
 import warnings
-warnings.filterwarnings("ignore", category=mpl.MatplotlibDeprecationWarning)
+warnings.filterwarnings("ignore", category=MatplotlibDeprecationWarning)
+
+#import matplotlib as mpl
 #mpl.use("Qt5Agg")
 
 
@@ -84,6 +90,21 @@ class ArgumentParser():
             However, "View Select" allows the user to select particles from the plot that can then be used for further 2D classification
             and/or particle picking with tools like Topaz.
             
+            Further details:
+            To use, draw one or more circles on the plot. If you click "New group" you can then draw more circles that are ultimately
+            saved into separate files. Use this to select different views. If two groups overlap each other, the overlapping particles
+            default to lower numbered groups. A separate file is saved which contains the remaining unselected particles. Click finish
+            to save the output. If you click finish without any selections, an image of the plot is saved.
+            
+            Re-import .csg files into cryosparc with the Import Result Group job.
+
+            The values of rot, tilt and psi refer to euler angles in the relion convention, which are sequential rotations around the
+            z, y and z axis respectively. These euler angles have the effect of rotating the 3D map before generating the viewing
+            direction plot. It is helpful for selecting hotspots that have become distorted at the top and bottom of the plot.
+
+            The colors used can be customized for accessibility or aesthetic reasons using the --plot_cmap and --group_cmap command
+            line options.
+            
             Written by Robert Stass, Bowden group, STRUBI/OPIC (2024)
             
             ''')
@@ -92,6 +113,8 @@ class ArgumentParser():
         addr = required.add_argument
 
         add('--dont_save_image', action='store_true', help='Stop the script outputting an image at the end.')
+        add('--plot_cmap', default=default_plot_cmap, help='Matplotlib colormap for the hexbin plot.')
+        add('--group_cmap', default=default_group_cmap, help='Matplotlib colormap for the selection group colors.')
         add('input_dataset_path', nargs='?', default=None, help='File path of an exported cryosparc .csg or .cs file. Can leave blank to open a file in the GUI.')
 
         '''
@@ -112,16 +135,20 @@ class ArgumentParser():
         if not args.input_dataset_path == None:
             if not os.path.exists(args.input_dataset_path):
                 self.error("Input file '%s' not found." % args.input_dataset_path)
+        try:
+            cm.get_cmap(args.plot_cmap)
+        except ValueError:
+            self.error("Cannot load colormap with name '%s'." % args.plot_cmap)
+        try:
+            cm.get_cmap(args.group_cmap)
+        except ValueError:
+            self.error("Cannot load colormap with name '%s'." % args.group_cmap)
 
 
 
-
-
-
-
-
-
-
+#Defaults
+default_plot_cmap = 'jet'
+default_group_cmap = 'tab10'
 
 
 ######### Main script ##########
@@ -446,8 +473,6 @@ def key_press_event(event):
             print_text('EllipseSelector rotation not supported in this version of matplotlib.')
 
 def select_callback(eclick, erelease):
-    #x1, y1 = eclick.xdata, eclick.ydata
-    #x2, y2 = erelease.xdata, erelease.ydata
     p.as_button.set_active(True)
 
 def rotate_ellipse_left(step=10):
@@ -469,7 +494,7 @@ def add_selection(event):
         if not ((x1 == x2) and (y1 == y2)):
             ellipse_triplet = [None, None, None]
             ellipse_triplet_extents = [p.selector.offset_ellipse1_extents, (x1, x2, y1, y2), p.selector.offset_ellipse2_extents]
-            #ell = mpl.patches.Ellipse((x1+(x2-x1)/2.,y1+(y2-y1)/2.),x2-x1,y2-y1,angle=angle, fill=None, edgecolor=p.group_cmap(current_group), linewidth=6)
+            #ell = patches.Ellipse((x1+(x2-x1)/2.,y1+(y2-y1)/2.),x2-x1,y2-y1,angle=angle, fill=None, edgecolor=p.group_cmap(current_group), linewidth=6)
             for i,(ellipse, extents) in enumerate(zip(ellipse_triplet, ellipse_triplet_extents)):
                 #offset = (i-1)*p.selector.offset
                 if extents is not None:
@@ -906,16 +931,17 @@ def generate_plot(cs, p, plot_data_queue, file_picker_queue):
     try:
         if cs.dataset_path == None:
             print_text('Open input file. (you can also pass a file directly on the command line).')
-        cs.dataset_path = file_picker_queue.get()
-        particles_dset = cs.load_dataset()
-        print_text('Calculating plot...')
-        p.az,p.el = calculate_plot(particles_dset)
-        plot_data_queue.put("Plot ready")
         while not p.stop_threads:
             try:
                 queue_readout = file_picker_queue.get_nowait()
                 if queue_readout == 'Rotate plot':
                     rotate_plot(p, plot_data_queue)
+                else:
+                    cs.dataset_path = queue_readout
+                    particles_dset = cs.load_dataset()
+                    print_text('Calculating plot...')
+                    p.az,p.el = calculate_plot(particles_dset)
+                    plot_data_queue.put("Plot ready")
             except queue.Empty:
                 time.sleep(0.1)
     except Exception as ex:
@@ -929,7 +955,7 @@ def plot_data(p, plot_data_queue):
         if queue_readout == "Plot ready" or queue_readout == 'Plot rotated':
             print_text('Plotting...') if queue_readout == 'Plot ready' else None
             old_hb = p.hb if hasattr(p,'hb') else None
-            p.hb = p.ax.hexbin(p.az, p.el, gridsize=50, bins='log', cmap='jet')
+            p.hb = p.ax.hexbin(p.az, p.el, gridsize=50, bins='log', cmap=p.plot_cmap)
             if hasattr(p,'cb'):
                 p.cb.remove()
             old_hb.remove() if old_hb != None else None
@@ -1018,11 +1044,9 @@ if __name__ == "__main__":
     image_string = '_plot'
     blank_image_string = '_blank_plot'
     save_image = not args.dont_save_image
-    colormap_name = 'tab10'
-    try:
-        group_cmap = mpl.colormaps.get_cmap(colormap_name)
-    except AttributeError:
-        group_cmap = mpl.cm.get_cmap(colormap_name)
+    group_cmap_name = args.group_cmap #'tab10'
+    plot_cmap_name = args.plot_cmap #'jet'
+    group_cmap = cm.get_cmap(group_cmap_name)
     
     #Start GUI
     root = tk.Tk()
@@ -1064,13 +1088,12 @@ if __name__ == "__main__":
     p.tilt = 0.0
     p.psi = 0.0
     p.angle_step = 90
+    p.plot_cmap = plot_cmap_name
 
     p.selector = OffsetEllipseSelector(np.pi*2, ax, select_callback, useblit=True, button=[1], minspanx=5, minspany=5, spancoords='pixels',
         props={'facecolor': group_cmap(0), 'edgecolor': group_cmap(0), 'alpha': 0.3, 'fill': True},
         ignore_event_outside=False, interactive=True)
-    #p.selector.state_modifier_keys["rotate"] = 'alt'
     supports_rotation = True if hasattr(p.selector, 'rotation') else False
-    #p.selector.
 
     p.ellipse_groups = []
     p.ellipse_groups.append([])
@@ -1080,58 +1103,60 @@ if __name__ == "__main__":
 
     # Buttons
     plt.subplots_adjust(bottom=0.3)
-    as_button_ax = fig.add_axes([0.1, 0.025, 0.13, 0.07])  # [left, bottom, width, height]
+    as_button_ax = fig.add_axes([0.1, 0.02, 0.13, 0.07])  # [left, bottom, width, height]
     p.as_button = plt.Button(as_button_ax, 'Save selection')
     p.as_button.on_clicked(add_selection)
     p.as_button.set_active(False)
 
-    ag_button_ax = fig.add_axes([0.25, 0.025, 0.13, 0.07])  # [left, bottom, width, height]
+    ag_button_ax = fig.add_axes([0.25, 0.02, 0.13, 0.07])  # [left, bottom, width, height]
     p.ag_button = plt.Button(ag_button_ax, 'New group')
     p.ag_button.on_clicked(add_selection_group)
     p.ag_button.set_active(False)
 
-    u_button_ax = fig.add_axes([0.40, 0.025, 0.13, 0.07])  # [left, bottom, width, height]
+    u_button_ax = fig.add_axes([0.40, 0.02, 0.13, 0.07])  # [left, bottom, width, height]
     p.u_button = plt.Button(u_button_ax, 'Undo')
     p.u_button.on_clicked(undo)
     p.u_button.set_active(False)
 
-    f_button_ax = fig.add_axes([0.55, 0.025, 0.13, 0.07])  # [left, bottom, width, height]
+    f_button_ax = fig.add_axes([0.55, 0.02, 0.13, 0.07])  # [left, bottom, width, height]
     p.f_button = plt.Button(f_button_ax, 'Finish')
     p.f_button.on_clicked(finish)
     p.f_button.set_active(False)
 
-    rot_neg_button_ax = fig.add_axes([0.19, 0.12, 0.04, 0.07])  # [left, bottom, width, height]
+    github_text = plt.text(0.995, 0.01, "github.com/robertstass/ViewSelect", color='grey', fontsize='medium', horizontalalignment='right', verticalalignment='bottom', transform=fig.transFigure)
+
+    rot_neg_button_ax = fig.add_axes([0.19, 0.11, 0.04, 0.07])  # [left, bottom, width, height]
     p.rot_neg_button = plt.Button(rot_neg_button_ax, '-rot')
     p.rot_neg_button.on_clicked(lambda event: rotate_plot_button_event(event, 'rot', -p.angle_step, file_picker_queue, p))
     p.rot_neg_button.set_active(False)
 
-    rot_pos_button_ax = fig.add_axes([0.24, 0.12, 0.04, 0.07])  # [left, bottom, width, height]
+    rot_pos_button_ax = fig.add_axes([0.24, 0.11, 0.04, 0.07])  # [left, bottom, width, height]
     p.rot_pos_button = plt.Button(rot_pos_button_ax, '+rot')
     p.rot_pos_button.on_clicked(lambda event: rotate_plot_button_event(event, 'rot', p.angle_step, file_picker_queue, p))
     p.rot_pos_button.set_active(False)
-    p.rot_text = plt.text(0.1, 0.15, 'Rot(z) %d°' % p.rot, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
+    p.rot_text = plt.text(0.1, 0.14, 'Rot(z) %d°' % p.rot, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
 
-    tilt_neg_button_ax = fig.add_axes([0.44, 0.12, 0.04, 0.07])  # [left, bottom, width, height]
+    tilt_neg_button_ax = fig.add_axes([0.44, 0.11, 0.04, 0.07])  # [left, bottom, width, height]
     p.tilt_neg_button = plt.Button(tilt_neg_button_ax, '-tilt')
     p.tilt_neg_button.on_clicked(lambda event: rotate_plot_button_event(event, 'tilt', -p.angle_step, file_picker_queue, p))
     p.tilt_neg_button.set_active(False)
 
-    tilt_pos_button_ax = fig.add_axes([0.49, 0.12, 0.04, 0.07])  # [left, bottom, width, height]
+    tilt_pos_button_ax = fig.add_axes([0.49, 0.11, 0.04, 0.07])  # [left, bottom, width, height]
     p.tilt_pos_button = plt.Button(tilt_pos_button_ax, '+tilt')
     p.tilt_pos_button.on_clicked(lambda event: rotate_plot_button_event(event, 'tilt', p.angle_step, file_picker_queue, p))
     p.tilt_pos_button.set_active(False)
-    p.tilt_text = plt.text(0.35, 0.15, 'Tilt(y) %d°' % p.tilt, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
+    p.tilt_text = plt.text(0.35, 0.14, 'Tilt(y) %d°' % p.tilt, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
 
-    psi_neg_button_ax = fig.add_axes([0.69, 0.12, 0.04, 0.07])  # [left, bottom, width, height]
+    psi_neg_button_ax = fig.add_axes([0.69, 0.11, 0.04, 0.07])  # [left, bottom, width, height]
     p.psi_neg_button = plt.Button(psi_neg_button_ax, '-psi')
     p.psi_neg_button.on_clicked(lambda event: rotate_plot_button_event(event, 'psi', -p.angle_step, file_picker_queue, p))
     p.psi_neg_button.set_active(False)
 
-    psi_pos_button_ax = fig.add_axes([0.74, 0.12, 0.04, 0.07])  # [left, bottom, width, height]
+    psi_pos_button_ax = fig.add_axes([0.74, 0.11, 0.04, 0.07])  # [left, bottom, width, height]
     p.psi_pos_button = plt.Button(psi_pos_button_ax, '+psi')
     p.psi_pos_button.on_clicked(lambda event: rotate_plot_button_event(event, 'psi', p.angle_step, file_picker_queue, p))
     p.psi_pos_button.set_active(False)
-    p.psi_text = plt.text(0.6, 0.15, 'Psi(z) %d°' % p.psi, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
+    p.psi_text = plt.text(0.6, 0.14, 'Psi(z) %d°' % p.psi, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
 
     p.euler_buttons = [p.rot_neg_button, p.rot_pos_button, p.tilt_neg_button, p.tilt_pos_button, p.psi_neg_button, p.psi_pos_button]
     
