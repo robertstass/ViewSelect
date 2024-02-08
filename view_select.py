@@ -113,8 +113,8 @@ class ArgumentParser():
         addr = required.add_argument
 
         add('--dont_save_image', action='store_true', help='Stop the script outputting an image at the end.')
-        add('--plot_cmap', default=default_plot_cmap, help='Matplotlib colormap for the hexbin plot.')
-        add('--group_cmap', default=default_group_cmap, help='Matplotlib colormap for the selection group colors.')
+        add('--plot_cmap', default=default_plot_cmap, help='Matplotlib colormap for the hexbin plot. (default: %(default)s)')
+        add('--group_cmap', default=default_group_cmap, help='Matplotlib colormap for the selection group colors. (default: %(default)s)')
         add('input_dataset_path', nargs='?', default=None, help='File path of an exported cryosparc .csg or .cs file. Can leave blank to open a file in the GUI.')
 
         '''
