@@ -286,14 +286,16 @@ class CustomTransform(Transform):
 
 
 class OffsetEllipseSelector(EllipseSelector):
-    def __init__(self, offset, ax, onselect, **kwargs):
+    def __init__(self, offset, ax, onselect, callable_visual_props, **kwargs):
             self.offset = offset
             self.offset_ellipse1 = None
             self.offset_ellipse2 = None
             self.offset_ellipse1_extents = None
             self.offset_ellipse2_extents = None
             self.onselect_func = onselect
-            super().__init__(ax, self.onselect, **kwargs)
+            self.callable_visual_props = callable_visual_props
+            props = self.get_visual_props()
+            super().__init__(ax, self.onselect, props=props, **kwargs)
 
 
     def onselect(self, eclick, erelease):
@@ -316,10 +318,11 @@ class OffsetEllipseSelector(EllipseSelector):
             # Create and draw an offset ellipse
             self.offset_ellipse1_extents = (x1 - offset, x2 - offset, y1, y2)
             self.offset_ellipse2_extents = (x1 + offset, x2 + offset, y1, y2)
+            props = self.get_visual_props()
             x1, x2, y1, y2 = self.offset_ellipse1_extents
-            self.offset_ellipse1 = patches.Ellipse(((x1 + (x2 - x1) / 2.), y1 + (y2 - y1) / 2.), x2 - x1, y2 - y1, angle=angle, **self._props)
+            self.offset_ellipse1 = patches.Ellipse(((x1 + (x2 - x1) / 2.), y1 + (y2 - y1) / 2.), x2 - x1, y2 - y1, angle=angle, **props)
             x1, x2, y1, y2 = self.offset_ellipse2_extents
-            self.offset_ellipse2 = patches.Ellipse(((x1 + (x2 - x1) / 2.), y1 + (y2 - y1) / 2.), x2 - x1, y2 - y1, angle=angle, **self._props)
+            self.offset_ellipse2 = patches.Ellipse(((x1 + (x2 - x1) / 2.), y1 + (y2 - y1) / 2.), x2 - x1, y2 - y1, angle=angle, **props)
             self.ax.add_patch(self.offset_ellipse1)
             self.ax.add_patch(self.offset_ellipse2)
             p.canvas.draw()
@@ -336,6 +339,8 @@ class OffsetEllipseSelector(EllipseSelector):
         self.offset_ellipse1 = None
         self.offset_ellipse2 = None
 
+    def get_visual_props(self):
+        return {key: value() if callable(value) else value for key, value in self.callable_visual_props.items()}
 
 
 def expmap(e, out=None):
@@ -536,6 +541,7 @@ def add_selection_group(event):
         p.radio_buttons.set_active(next_button_index)
     current_group = radiobutton_get_state()
     p.ellipse_groups.append([])
+    p.selector.onselect(None,None)
     p.fig.canvas.draw()
     print_text('New selection group (%d) added.' % (current_group+1))
     if p.radio_buttons_visible == 2:
@@ -1090,11 +1096,6 @@ if __name__ == "__main__":
     p.angle_step = 90
     p.plot_cmap = plot_cmap_name
 
-    p.selector = OffsetEllipseSelector(np.pi*2, ax, select_callback, useblit=True, button=[1], minspanx=5, minspany=5, spancoords='pixels',
-        props={'facecolor': group_cmap(0), 'edgecolor': group_cmap(0), 'alpha': 0.3, 'fill': True},
-        ignore_event_outside=False, interactive=True)
-    supports_rotation = True if hasattr(p.selector, 'rotation') else False
-
     p.ellipse_groups = []
     p.ellipse_groups.append([])
     p.ellipse_log = []
@@ -1176,6 +1177,13 @@ if __name__ == "__main__":
         circle.set_linewidth(2)
         circle.set_visible(False)
         label.set_visible(False)
+
+
+    p.selector_props = {'facecolor': lambda : group_cmap(radiobutton_get_state()), 'edgecolor': lambda : group_cmap(radiobutton_get_state()), 'alpha': 0.3, 'fill': True}
+    #props = {key: value() if callable(value) else value for key, value in p.selector_props.items()}
+    p.selector = OffsetEllipseSelector(np.pi * 2, ax, select_callback, callable_visual_props=p.selector_props, useblit=True, button=[1], minspanx=5, minspany=5,
+                spancoords='pixels', ignore_event_outside=False, interactive=True)
+    supports_rotation = True if hasattr(p.selector, 'rotation') else False
 
 
     # key bindings
