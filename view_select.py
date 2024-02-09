@@ -32,12 +32,34 @@ from tkinter import scrolledtext
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from tkinter import filedialog
 
-#from cryosparc.tools import CryoSPARC
-from cryosparc.dataset import Dataset
-import yaml
-
 import warnings
 warnings.filterwarnings("ignore", category=MatplotlibDeprecationWarning)
+
+try:
+    #from cryosparc.tools import CryoSPARC
+    from cryosparc.dataset import Dataset
+    import yaml
+    cryosparc_support = True
+except ImportError as e:
+    cryosparc_support = False
+    print(e)
+    print('cryosparc-tools and PyYAML modules required for cryosparc support. Use: pip install cryosparc-tools')
+
+try:
+    warnings.filterwarnings("ignore", category=UserWarning)
+    warnings.filterwarnings("ignore", category=FutureWarning)
+    import starfile
+    from starfile.writer import StarWriter
+    relion_support = True
+except ImportError as e:
+    relion_support = False
+    print(e)
+    print('starfile python module required for relion star file support. Use: pip install starfile')
+
+if not relion_support and not cryosparc_support:
+    error_msg = 'Must have at least cryosparc-tools/pyYAML or starfile modules installed for cryosparc or relion support respectively.'
+    raise ImportError(error_msg)
+
 
 
 
@@ -51,18 +73,20 @@ class ArgumentParser():
             description='''
             Select cryo-EM particles from a viewing direction distribution plot.
 
-            This script will take an exported cryosparc .csg or .cs file and display a viewing direction distribution plot.
-            The user can then draw circles on the plot to select particles that are of a particular orientation.
-            Separate .csg/.cs files containing these particles are then saved that can be imported back into cryosparc.
+            This script will take an exported cryosparc .csg/.cs file or a relion star file and display a viewing direction distribution
+            plot. The user can then draw circles on the plot to select particles that are of a particular orientation.
+            Separate .csg/.cs/.star files containing these particles are then saved that can be imported back into cryosparc/relion.
             
             Note that if you supply a .csg file, the corresponding .cs file must be present in the same directory.
             New .csg files are only output if a .csg file is input originally (Recommended as this makes re-importing easier).
             
             Usage:
             
-            Start by exporting particles from the output tab of a 3D refinement job (Actions -> Export). Then:
+            For cryosparc, start by exporting particles from the output tab of a 3D refinement job (Actions -> Export).
+            For relion, simply locate an appropriate star file from a 3D refinement.
+            Then:
             
-            python view_select.py cryosparc_exported_file.csg
+            python view_select.py exported_file.csg
             or select the file from the GUI simply with
             python view_select.py
             
@@ -70,7 +94,8 @@ class ArgumentParser():
             python view_select.py -h
             
             Dependencies:
-            cryosparc-tools (install with "pip install cryosparc-tools")
+            cryosparc-tools (for cryosparc users. install with "pip install cryosparc-tools")
+            starfile (by Alister Burt. For relion users. install with "pip install starfile")
             matplotlib (Tested with v3.7.0. Some earlier versions don't have the ability to rotate an ellipse selection).
             
             Installation:
@@ -96,19 +121,21 @@ class ArgumentParser():
             To use, draw one or more circles on the plot. If you click "New group" you can then draw more circles that are ultimately
             saved into separate files. Use this to select different views. If two groups overlap each other, the overlapping particles
             default to lower numbered groups. A separate file is saved which contains the remaining unselected particles. Click finish
-            to save the output. If you click finish without any selections, an image of the plot is saved.
+            to save the output.
+            
+            If you click finish without any selections, an image of the plot is saved. This is an easy way to make cryosparc style viewing
+            direction distribution plots from relion star files.
             
             Re-import .csg files into cryosparc with the Import Result Group job.
-
+            
             The values of rot, tilt and psi refer to euler angles in the relion convention, which are sequential rotations around the
             z, y and z axis respectively. These euler angles have the effect of rotating the 3D map before generating the viewing
             direction plot. It is helpful for selecting hotspots that have become distorted at the top and bottom of the plot.
-
+            
             The colors used can be customized for accessibility or aesthetic reasons using the --plot_cmap and --group_cmap command
             line options.
             
             Written by Robert Stass, Bowden group, STRUBI/OPIC (2024)
-            
             ''')
         required = self.parser.add_argument_group('required arguments')
         add = self.parser.add_argument  # shortcut
@@ -117,7 +144,7 @@ class ArgumentParser():
         add('--dont_save_image', action='store_true', help='Stop the script outputting an image at the end.')
         add('--plot_cmap', default=default_plot_cmap, help='Matplotlib colormap for the hexbin plot. (default: %(default)s)')
         add('--group_cmap', default=default_group_cmap, help='Matplotlib colormap for the selection group colors. (default: %(default)s)')
-        add('input_dataset_path', nargs='?', default=None, help='File path of an exported cryosparc .csg or .cs file. Can leave blank to open a file in the GUI.')
+        add('input_dataset_path', nargs='?', default=None, help='File path of an exported cryosparc .csg/.cs file or a relion star file. Can leave blank to open a file in the GUI.')
 
         '''
         if len(sys.argv)==1:
@@ -156,13 +183,42 @@ default_group_cmap = 'tab10'
 ######### Main script ##########
 
 
-class CryosparcDataset:
-    def __init__(self, dataset_path=None, group_path=None):
-        self.group_path = group_path #.csg
+class CryoDatafile:
+    def __init__(self, dataset_path=None, cryosparc_support=True, relion_support=True):
+        self.group_path = None #.csg
         self.dataset_path = dataset_path #.cs
         self.num_particles = None
+        self.cryosparc_support = cryosparc_support
+        self.relion_support = relion_support
+        self.is_relion = False
+        self.is_cryosparc = False
+        self.rotation_matrices = None
 
     def load_dataset(self):
+        splitpath = os.path.splitext(self.dataset_path)
+        if splitpath[1] == '.star':
+            if not self.relion_support:
+                error_msg = 'Install starfile module to load star files.'
+                print_text(error_msg, color='red')
+                raise ImportError(error_msg)
+            self.is_relion = True
+            self.is_cryosparc = False
+            particles = self.load_rln_dataset()
+        elif splitpath[1] == '.csg' or splitpath[1] == '.cs':
+            if not self.cryosparc_support:
+                error_msg = 'Install cryosparc-tools/pyYAML modules to load .csg/.cs files.'
+                print_text(error_msg, color='red')
+                raise ImportError(error_msg)
+            self.is_relion = False
+            self.is_cryosparc = True
+            particles = self.load_cs_dataset()
+        else:
+            error_msg = 'File with extension "%s" not recognised.' % splitpath[1]
+            print_text(error_msg, color='red')
+            raise FileNotFoundError(error_msg)
+        return particles
+
+    def load_cs_dataset(self):
         splitpath = os.path.splitext(self.dataset_path)
         if splitpath[1] == '.csg':
             print_text('.csg file supplied.')
@@ -172,9 +228,20 @@ class CryosparcDataset:
         else:
             print_text('.cs file supplied. (no .csg file will be produced).')
         print_text('Reading .cs file...')
-        self.particles_dset = Dataset.load(self.dataset_path)
-        self.num_particles = len(self.particles_dset)
-        return self.particles_dset
+        self.particles = Dataset.load(self.dataset_path)
+        self.num_particles = len(self.particles)
+        return self.particles
+
+    def load_rln_dataset(self):
+        print_text('Reading .star file...')
+        df = starfile.read(self.dataset_path)
+        if 'optics' in df.keys():
+            self.optics = df['optics']
+        else:
+            self.optics = None
+        self.particles = df['particles']
+        self.num_particles = len(self.particles)
+        return self.particles
 
     def load_csg(self):
         with open(self.group_path, 'r') as file:
@@ -182,7 +249,7 @@ class CryosparcDataset:
         cs = self.group_data.get('results', {}).get('alignments3D', {}).get('metafile')
         if cs == None:
             error_msg = 'Error: .csg file must contain an "alignments3D" field.'
-            print_text(error_msg)
+            print_text(error_msg, color='red')
             raise OSError(error_msg)
         if cs is not None and cs.startswith('>'):
             cs = cs[1:]
@@ -193,7 +260,7 @@ class CryosparcDataset:
             self.dataset_path = cs
         else:
             error_msg = 'Error: When supplying a .csg file, the corresponding .cs file (%s) must be present in the same directory.' % (cs)
-            print_text(error_msg)
+            print_text(error_msg, color='red')
             raise OSError(error_msg)
 
     def update_csg(self, new_metafile, new_num_items):
@@ -215,14 +282,72 @@ class CryosparcDataset:
 
 
     def open_filepicker(self, event, file_picker_queue):
-        file_path = filedialog.askopenfilename(title="Select a cryosparc file",
-                                               filetypes=[("Cryosparc group file", "*.csg"), ("Cryosparc data file", "*.cs"), ("All files", "*.*")])
+        if self.relion_support and not self.cryosparc_support:
+            title = "Select a relion star file"
+            filetypes = [("Relion star file", "*.star"), ("All files", "*.*")]
+        elif self.cryosparc_support and not self.relion_support:
+            title = "Select a cryosparc csg/cs file"
+            filetypes = [("Cryosparc group file", "*.csg"), ("Cryosparc data file", "*.cs"), ("All files", "*.*")]
+        else:
+            title = "Select a cryosparc csg/cs file or a relion star file"
+            filetypes = [(("Cryosparc or Relion file", ("*.csg", "*.star"))), ("Cryosparc data file", "*.cs"), ("All files", "*.*")]
+        file_path = filedialog.askopenfilename(title=title, filetypes=filetypes)
         if not (file_path == '' or file_path == () or file_path == [] or file_path == None):
             print_text("Selected file: %s" % file_path)
             self.dataset_path = file_path
             p.o_button.set_active(False)
             p.o_button_ax.set_visible(False)
             file_picker_queue.put(self.dataset_path)
+
+    def get_poses(self):
+        if self.is_cryosparc:
+            poses = np.array(self.particles['alignments3D/pose'])
+        elif self.is_relion:
+            poses = np.array(self.particles[['rlnAngleRot', 'rlnAngleTilt', 'rlnAnglePsi']])
+        return poses
+
+    def mask_dataset(self, mask):
+        mask_len = len(mask)
+        if mask_len != self.num_particles:
+            error_msg = 'Cannot apply mask of length %d to dataset of size %d' % (mask_len, self.num_particles)
+            raise ValueError(error_msg)
+        if self.is_cryosparc:
+            return self.particles.mask(mask)
+        elif self.is_relion:
+            return self.particles[mask]
+
+    def write_dataset(self, particles, file_path):
+        if self.is_cryosparc:
+            output_file_paths = self.write_cs_dataset(particles, file_path)
+        elif self.is_relion:
+            output_file_paths = self.write_rln_dataset(particles, file_path)
+        else:
+            output_file_paths = []
+        return output_file_paths
+
+    def write_cs_dataset(self, particles, file_path):
+        output_csg = False if self.group_path == None else True
+        output_file_paths = []
+        num_particles = len(particles)
+        if output_csg:
+            group_data = self.update_csg(os.path.basename(file_path), num_particles)
+            csg_filepath = file_path + 'g'
+            self.write_csg(group_data, csg_filepath)
+            output_file_paths.append(csg_filepath)
+        particles.save(file_path)
+        output_file_paths.append(file_path)
+        return output_file_paths
+
+
+    def write_rln_dataset(self, particles, file_path):
+        StarWriter.backup_if_file_exists = lambda *args: None #avoids a backup file error
+        if self.optics is not None:
+            starfile.write({'optics': self.optics, 'particles': particles}, file_path)
+        else:
+            starfile.write(particles, file_path)
+        return [file_path]
+
+
 
 
 class PlotObjects:
@@ -450,8 +575,8 @@ def identity_matrix():
     return np.eye(3)
 
 
-def get_viewdir(poses, rotation_matrix=None):
-    Rs = expmap(poses)
+def get_viewdir(df, rotation_matrix=None):
+    Rs = df.rotation_matrices
     if rotation_matrix is not None:
         Rs = np.matmul(Rs, rotation_matrix)
     viewdirs = Rs[:,2]
@@ -570,7 +695,7 @@ def finish(event):
         print_text('No selections made.')
         if save_image:
             print_text('Just outputting image of the plot.')
-            dataset_basename, dataset_ext = os.path.splitext(cs.dataset_path)
+            dataset_basename, dataset_ext = os.path.splitext(df.dataset_path)
             image_path = dataset_basename + blank_image_string + '.png'
             p.plt.savefig(image_path)
             print_text(image_path)
@@ -585,18 +710,17 @@ def finish(event):
         output_thread.start()
 
 
-def output_cs():
+def output_df():
     try:
         current_group = radiobutton_get_state()
         group_selections = []
         output_paths = []
         output_particle_numbers = []
         group_nums = []
-        output_csg = False if cs.group_path == None else True
-        dataset_basename, dataset_ext = os.path.splitext(cs.dataset_path)
+        dataset_basename, dataset_ext = os.path.splitext(df.dataset_path)
         p.radio_buttons_visible = 1 if p.radio_buttons_visible == 0 else p.radio_buttons_visible
         for group in range(0,p.radio_buttons_visible):
-            selected = np.zeros(cs.num_particles)
+            selected = np.zeros(df.num_particles)
             for ellipse_triplet in p.ellipse_groups[group]:
                 for ellipse in ellipse_triplet:
                     if ellipse is not None:
@@ -612,34 +736,24 @@ def output_cs():
             for group_selection in group_selections: #overlapping particles default to the earliest group drawn
                 selected = np.multiply(selected, np.invert(group_selection))
             group_selections.append(selected)
-            subset = cs.particles_dset.mask(selected)
+            subset = df.mask_dataset(selected)
             subset_path = dataset_basename + path_append_string + str(group+1) + dataset_ext
             num_particles = len(subset)
-            if output_csg:
-                group_data = cs.update_csg(os.path.basename(subset_path), num_particles)
-                csg_filepath = subset_path + 'g'
-                cs.write_csg(group_data, csg_filepath)
-                output_paths.append(csg_filepath)
+            paths = df.write_dataset(subset, subset_path)
+            output_paths.extend(paths)
             group_nums.append(group+1)
             output_particle_numbers.append(num_particles)
-            output_paths.append(subset_path)
-            subset.save(subset_path)
         if len(group_selections) == 1:
             remainder = np.invert(group_selections[0])
         else:
             remainder = np.invert(np.logical_or.reduce(group_selections))
-        subset = cs.particles_dset.mask(remainder)
+        subset = df.mask_dataset(remainder)
         remainder_path = dataset_basename + remainder_string + dataset_ext
         num_particles = len(subset)
-        if output_csg:
-            group_data = cs.update_csg(os.path.basename(remainder_path), num_particles)
-            csg_filepath = remainder_path + 'g'
-            cs.write_csg(group_data, csg_filepath)
-            output_paths.append(csg_filepath)
+        paths = df.write_dataset(subset, remainder_path)
+        output_paths.extend(paths)
         output_particle_numbers.append(num_particles)
-        output_paths.append(remainder_path)
         group_nums.append('remainder')
-        subset.save(remainder_path)
         p.selector.set_visible(False)
         p.selector.disconnect_events()
         if save_image:
@@ -658,7 +772,6 @@ def output_cs():
         print_text('Output file paths:')
         for output_path in output_paths:
             print_text(output_path)
-        #print_text('Finished!')
         output_queue.put('Finished!')
     except Exception as ex:
         print_text(str(type(ex).__name__)+': '+str(ex), color='red')
@@ -810,7 +923,7 @@ def rotate_plot_button_event(event, euler_name, angle, queue, p):
         p.f_button.set_active(f_button_status)
 
 def rotate_plot(p, plot_data_queue):
-    p.az, p.el = calculate_plot(cs.particles_dset, p.rotation_matrix)
+    p.az, p.el = calculate_plot(df, p.rotation_matrix)
     plot_data_queue.put("Plot rotated")
 
 def update_ellipse_plots(p): #update ellipse selections when the plot is rotated
@@ -927,18 +1040,24 @@ def update_ellipse_plots(p): #update ellipse selections when the plot is rotated
                     if ellipse_path is not None:
                         p.ax.add_patch(ellipse)
 
-def calculate_plot(particles_dset, rotation_matrix=None):
-    poses = np.array(particles_dset['alignments3D/pose'])
+def calculate_plot(df, rotation_matrix=None):
     if rotation_matrix is not None:
         p.rotation_matrix = rotation_matrix
-    viewdirs = get_viewdir(poses, rotation_matrix)
+    viewdirs = get_viewdir(df, rotation_matrix)
     az, el = get_azimuth_elevation(viewdirs)
     return az,el
 
+def precalculate_plot(df):
+    poses = df.get_poses()
+    if df.is_cryosparc:
+        df.rotation_matrices = expmap(poses)
+    else:
+        df.rotation_matrices = matrix_from_euler(poses, radians=False)
 
-def generate_plot(cs, p, plot_data_queue, file_picker_queue):
+
+def generate_plot(df, p, plot_data_queue, file_picker_queue):
     try:
-        if cs.dataset_path == None:
+        if df.dataset_path == None:
             print_text('Open input file. (you can also pass a file directly on the command line).')
         while not p.stop_threads:
             try:
@@ -946,10 +1065,11 @@ def generate_plot(cs, p, plot_data_queue, file_picker_queue):
                 if queue_readout == 'Rotate plot':
                     rotate_plot(p, plot_data_queue)
                 else:
-                    cs.dataset_path = queue_readout
-                    particles_dset = cs.load_dataset()
+                    df.dataset_path = queue_readout
+                    particles = df.load_dataset()
                     print_text('Calculating plot...')
-                    p.az,p.el = calculate_plot(particles_dset)
+                    precalculate_plot(df)
+                    p.az,p.el = calculate_plot(df)
                     plot_data_queue.put("Plot ready")
             except queue.Empty:
                 time.sleep(0.1)
@@ -1197,7 +1317,7 @@ if __name__ == "__main__":
 
 
     #Dataset
-    cs = CryosparcDataset(dataset_path)
+    df = CryoDatafile(dataset_path, cryosparc_support=cryosparc_support, relion_support=relion_support)
 
 
     #Queues
@@ -1211,7 +1331,7 @@ if __name__ == "__main__":
     if dataset_path == None:
         p.o_button_ax = fig.add_axes([0.35, 0.5, 0.3, 0.2])  # [left, bottom, width, height]
         p.o_button = plt.Button(p.o_button_ax, 'Open')
-        p.o_button.on_clicked(lambda event: cs.open_filepicker(event, file_picker_queue))
+        p.o_button.on_clicked(lambda event: df.open_filepicker(event, file_picker_queue))
     else:
         file_picker_queue.put(dataset_path)
 
@@ -1219,8 +1339,8 @@ if __name__ == "__main__":
     #Threading
     try:
         stop_event = Event()
-        thread = Thread(target=generate_plot, args=(cs, p, plot_data_queue, file_picker_queue))
-        output_thread = Thread(target=output_cs)
+        thread = Thread(target=generate_plot, args=(df, p, plot_data_queue, file_picker_queue))
+        output_thread = Thread(target=output_df)
         thread.start()
 
         root.after(500, lambda: plot_data(p, plot_data_queue))

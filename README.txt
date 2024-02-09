@@ -1,17 +1,19 @@
 Select cryo-EM particles from a viewing direction distribution plot.
 
-This script will take an exported cryosparc .csg or .cs file and display a viewing direction distribution plot.
-The user can then draw circles on the plot to select particles that are of a particular orientation.
-Separate .csg/.cs files containing these particles are then saved that can be imported back into cryosparc.
+This script will take an exported cryosparc .csg/.cs file or a relion star file and display a viewing direction distribution
+plot. The user can then draw circles on the plot to select particles that are of a particular orientation.
+Separate .csg/.cs/.star files containing these particles are then saved that can be imported back into cryosparc/relion.
 
 Note that if you supply a .csg file, the corresponding .cs file must be present in the same directory.
 New .csg files are only output if a .csg file is input originally (Recommended as this makes re-importing easier).
 
 Usage:
 
-Start by exporting particles from the output tab of a 3D refinement job (Actions -> Export). Then:
+For cryosparc, start by exporting particles from the output tab of a 3D refinement job (Actions -> Export).
+For relion, simply locate an appropriate star file from a 3D refinement.
+Then:
 
-python view_select.py cryosparc_exported_file.csg
+python view_select.py exported_file.csg
 or select the file from the GUI simply with
 python view_select.py
 
@@ -19,7 +21,8 @@ For help:
 python view_select.py -h
 
 Dependencies:
-cryosparc-tools (install with "pip install cryosparc-tools")
+cryosparc-tools (for cryosparc users. install with "pip install cryosparc-tools")
+starfile (by Alister Burt. For relion users. install with "pip install starfile")
 matplotlib (Tested with v3.7.0. Some earlier versions don't have the ability to rotate an ellipse selection).
 
 Installation:
@@ -45,7 +48,10 @@ Further details:
 To use, draw one or more circles on the plot. If you click "New group" you can then draw more circles that are ultimately
 saved into separate files. Use this to select different views. If two groups overlap each other, the overlapping particles
 default to lower numbered groups. A separate file is saved which contains the remaining unselected particles. Click finish
-to save the output. If you click finish without any selections, an image of the plot is saved.
+to save the output.
+
+If you click finish without any selections, an image of the plot is saved. This is an easy way to make cryosparc style viewing
+direction distribution plots from relion star files.
 
 Re-import .csg files into cryosparc with the Import Result Group job.
 
