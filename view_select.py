@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+print('Importing modules...')
 import os
 import sys
 import math
@@ -9,6 +10,8 @@ import argparse
 import copy
 import time
 
+from matplotlib import use as Use
+Use("TkAgg")
 
 from matplotlib import MatplotlibDeprecationWarning
 from matplotlib import pyplot as plt
@@ -36,8 +39,7 @@ import yaml
 import warnings
 warnings.filterwarnings("ignore", category=MatplotlibDeprecationWarning)
 
-from matplotlib import use as Use
-Use("TkAgg")
+
 
 
 
@@ -1056,7 +1058,8 @@ if __name__ == "__main__":
     group_cmap_name = args.group_cmap #'tab10'
     plot_cmap_name = args.plot_cmap #'jet'
     group_cmap = cm.get_cmap(group_cmap_name)
-    
+
+    print('Starting GUI...')
     #Start GUI
     root = tk.Tk()
     root.title("View Select - Select particles from a viewing direction distribution plot.")
