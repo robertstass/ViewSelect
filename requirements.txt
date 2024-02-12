@@ -1,4 +1,3 @@
-matplotlib
 cryosparc-tools
 pyyaml
 starfile

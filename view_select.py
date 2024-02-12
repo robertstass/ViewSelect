@@ -193,6 +193,8 @@ class CryoDatafile:
         self.is_relion = False
         self.is_cryosparc = False
         self.rotation_matrices = None
+        self.additional_dataset_files = []
+        self.additional_dataset_output_paths = []
 
     def load_dataset(self):
         splitpath = os.path.splitext(self.dataset_path)
@@ -228,7 +230,7 @@ class CryoDatafile:
         else:
             print_text('.cs file supplied. (no .csg file will be produced).')
         print_text('Reading .cs file...')
-        self.particles = Dataset.load(self.dataset_path)
+        self.particles = self.load_cs(self.dataset_path)
         self.num_particles = len(self.particles)
         return self.particles
 
@@ -247,6 +249,7 @@ class CryoDatafile:
         with open(self.group_path, 'r') as file:
             self.group_data = yaml.safe_load(file)
         cs = self.group_data.get('results', {}).get('alignments3D', {}).get('metafile')
+        num_items = self.group_data.get('results', {}).get('alignments3D', {}).get('num_items')
         if cs == None:
             error_msg = 'Error: .csg file must contain an "alignments3D" field.'
             print_text(error_msg, color='red')
@@ -256,12 +259,24 @@ class CryoDatafile:
         dirname = os.path.dirname(self.group_path)
         if dirname != '':
             cs = os.path.join(dirname, cs)
-        if os.path.exists(cs):
-            self.dataset_path = cs
-        else:
-            error_msg = 'Error: When supplying a .csg file, the corresponding .cs file (%s) must be present in the same directory.' % (cs)
-            print_text(error_msg, color='red')
-            raise OSError(error_msg)
+        self.additional_dataset_files = []
+        results_section = self.group_data.get('results', {})
+        for result_label, result_value in results_section.items():
+            metafile = result_value['metafile']
+            metafile = metafile[1:] if metafile is not None and metafile.startswith('>') else metafile
+            if metafile != cs:
+                if result_value['num_items'] == num_items: #must be same as original otherwise ignore.
+                    self.additional_dataset_files.append(metafile)
+        self.additional_dataset_files = list(set(self.additional_dataset_files))
+        for file_path in [cs] + self.additional_dataset_files:
+            if not os.path.exists(file_path):
+                error_msg = 'Error: When supplying a .csg file, the corresponding .cs file (%s) must be present in the same directory.' % (cs)
+                print_text(error_msg, color='red')
+                raise OSError(error_msg)
+        self.dataset_path = cs
+
+    def load_cs(self, file_path):
+        return Dataset.load(file_path)
 
     def update_csg(self, new_metafile, new_num_items):
         #make a copy
@@ -274,6 +289,13 @@ class CryoDatafile:
                     result_value['metafile'] = '>'+new_metafile
                     if 'num_items' in result_value:
                         result_value['num_items'] = new_num_items
+                else:
+                    for additional_file, additional_output_file in zip(self.additional_dataset_files, self.additional_dataset_output_paths): #other .cs files in .csg
+                        if result_value['metafile'] == '>'+additional_file:
+                            new_additional_metafile = os.path.basename(additional_output_file)
+                            result_value['metafile'] = '>' + new_additional_metafile
+                            if 'num_items' in result_value:
+                                result_value['num_items'] = new_num_items
         return group_data
 
     def write_csg(self, group_data, filepath):
@@ -312,9 +334,12 @@ class CryoDatafile:
             error_msg = 'Cannot apply mask of length %d to dataset of size %d' % (mask_len, self.num_particles)
             raise ValueError(error_msg)
         if self.is_cryosparc:
-            return self.particles.mask(mask)
+            return self.mask_cs(self.particles, mask)
         elif self.is_relion:
             return self.particles[mask]
+
+    def mask_cs(self, particles, mask):
+        return particles.mask(mask)
 
     def write_dataset(self, particles, file_path):
         if self.is_cryosparc:
@@ -334,10 +359,12 @@ class CryoDatafile:
             csg_filepath = file_path + 'g'
             self.write_csg(group_data, csg_filepath)
             output_file_paths.append(csg_filepath)
-        particles.save(file_path)
+        self.write_cs(particles, file_path)
         output_file_paths.append(file_path)
         return output_file_paths
 
+    def write_cs(self, particles, file_path):
+        particles.save(file_path)
 
     def write_rln_dataset(self, particles, file_path):
         StarWriter.backup_if_file_exists = lambda *args: None #avoids a backup file error
@@ -717,6 +744,12 @@ def output_df():
         output_paths = []
         output_particle_numbers = []
         group_nums = []
+        if df.is_cryosparc and df.additional_dataset_files is not []: #other .cs files in the .csg
+            do_additional_files = True
+            additional_dataset_masks = []
+            additional_output_path_lists = []
+        else:
+            do_additional_files = False
         dataset_basename, dataset_ext = os.path.splitext(df.dataset_path)
         p.radio_buttons_visible = 1 if p.radio_buttons_visible == 0 else p.radio_buttons_visible
         for group in range(0,p.radio_buttons_visible):
@@ -737,10 +770,20 @@ def output_df():
                 selected = np.multiply(selected, np.invert(group_selection))
             group_selections.append(selected)
             subset = df.mask_dataset(selected)
-            subset_path = dataset_basename + path_append_string + str(group+1) + dataset_ext
+            append_string = path_append_string + str(group+1) + dataset_ext
+            subset_path = dataset_basename + append_string
             num_particles = len(subset)
+            if do_additional_files:
+                df.additional_dataset_output_paths = []
+                for additional_file in df.additional_dataset_files:
+                    additional_output_file = os.path.splitext(additional_file)[0]+append_string
+                    df.additional_dataset_output_paths.append(additional_output_file)
+                additional_output_path_lists.append(copy.copy(df.additional_dataset_output_paths))
+                additional_dataset_masks.append(selected)
             paths = df.write_dataset(subset, subset_path)
             output_paths.extend(paths)
+            if do_additional_files:
+                output_paths.extend(df.additional_dataset_output_paths)
             group_nums.append(group+1)
             output_particle_numbers.append(num_particles)
         if len(group_selections) == 1:
@@ -748,10 +791,20 @@ def output_df():
         else:
             remainder = np.invert(np.logical_or.reduce(group_selections))
         subset = df.mask_dataset(remainder)
-        remainder_path = dataset_basename + remainder_string + dataset_ext
+        append_string = remainder_string + dataset_ext
+        remainder_path = dataset_basename + append_string
         num_particles = len(subset)
+        if do_additional_files:
+            df.additional_dataset_output_paths = []
+            for additional_file in df.additional_dataset_files:
+                additional_output_file = os.path.splitext(additional_file)[0] + append_string
+                df.additional_dataset_output_paths.append(additional_output_file)
+            additional_output_path_lists.append(copy.copy(df.additional_dataset_output_paths))
+            additional_dataset_masks.append(remainder)
         paths = df.write_dataset(subset, remainder_path)
         output_paths.extend(paths)
+        if do_additional_files:
+            output_paths.extend(df.additional_dataset_output_paths)
         output_particle_numbers.append(num_particles)
         group_nums.append('remainder')
         p.selector.set_visible(False)
@@ -760,6 +813,16 @@ def output_df():
             image_path = dataset_basename + image_string + '.png'
             p.plt.savefig(image_path)
             output_paths.append(image_path)
+        if do_additional_files:
+            df.particles = []
+            for i,additional_file in enumerate(df.additional_dataset_files):
+                file_root = os.path.dirname(df.dataset_path)
+                additional_particles = df.load_cs(os.path.join(file_root,additional_file))
+                for additional_mask, additional_output_files in zip(additional_dataset_masks, additional_output_path_lists):
+                    additional_output_file = additional_output_files[i]
+                    particles = df.mask_cs(additional_particles, additional_mask)
+                    df.write_cs(particles, additional_output_file)
+                additional_particles = []
         particle_total = 0
         print_text('Particle numbers:')
         for i,(output_particle_number,group_num) in enumerate(zip(output_particle_numbers, group_nums)):
