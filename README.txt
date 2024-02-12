@@ -1,7 +1,7 @@
 Select cryo-EM particles from a viewing direction distribution plot.
 
-This script will take an exported cryosparc .csg/.cs file or a relion star file and display a viewing direction distribution
-plot. The user can then draw circles on the plot to select particles that are of a particular orientation.
+This script will take an exported cryosparc .csg/.cs file or a relion star file and display a viewing direction
+distribution plot. The user can then draw circles on the plot to select particles that are of a particular orientation.
 Separate .csg/.cs/.star files containing these particles are then saved that can be imported back into cryosparc/relion.
 
 Note that if you supply a .csg file, the corresponding .cs file must be present in the same directory.
@@ -41,8 +41,8 @@ in a preferred orientation problem. It is then optimal to try to enrich other vi
 hard to find at the 2D classification stage. The 3D refinement stage can sometimes help but it can be difficult
 to relate hotspots in a viewing direction distribution plot back to the 2D classes. There is a partial solution
 to this which is to generate a .bild file for viewing in chimera using pyem (https://github.com/asarnow/pyem).
-However, "View Select" allows the user to select particles from the plot that can then be used for further 2D classification
-and/or particle picking with tools like Topaz.
+However, "View Select" allows the user to select particles from the plot that can then be used for further 2D
+classification and/or particle picking with tools like Topaz.
 
 Further details:
 To use, draw one or more circles on the plot. If you click "New group" you can then draw more circles that are ultimately
@@ -50,8 +50,8 @@ saved into separate files. Use this to select different views. If two groups ove
 default to lower numbered groups. A separate file is saved which contains the remaining unselected particles. Click finish
 to save the output.
 
-If you click finish without any selections, an image of the plot is saved. This is an easy way to make cryosparc style viewing
-direction distribution plots from relion star files.
+If you click finish without any selections, an image of the plot is saved. This is an easy way to make cryosparc style
+viewing direction distribution plots from relion star files.
 
 Re-import .csg files into cryosparc with the Import Result Group job.
 
