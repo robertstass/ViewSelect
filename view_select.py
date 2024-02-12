@@ -257,6 +257,7 @@ class CryoDatafile:
         if cs is not None and cs.startswith('>'):
             cs = cs[1:]
         dirname = os.path.dirname(self.group_path)
+        cs_name = cs
         if dirname != '':
             cs = os.path.join(dirname, cs)
         self.additional_dataset_files = []
@@ -264,15 +265,18 @@ class CryoDatafile:
         for result_label, result_value in results_section.items():
             metafile = result_value['metafile']
             metafile = metafile[1:] if metafile is not None and metafile.startswith('>') else metafile
-            if metafile != cs:
+            if metafile != cs_name:
                 if result_value['num_items'] == num_items: #must be same as original otherwise ignore.
                     self.additional_dataset_files.append(metafile)
         self.additional_dataset_files = list(set(self.additional_dataset_files))
-        for file_path in [cs] + self.additional_dataset_files:
+        for file_path in [cs_name] + self.additional_dataset_files:
+            file_root = os.path.dirname(self.group_path)
+            file_path = os.path.join(file_root, file_path)
             if not os.path.exists(file_path):
                 error_msg = 'Error: When supplying a .csg file, the corresponding .cs file (%s) must be present in the same directory.' % (cs)
                 print_text(error_msg, color='red')
                 raise OSError(error_msg)
+        print(self.additional_dataset_files)
         self.dataset_path = cs
 
     def load_cs(self, file_path):
@@ -776,7 +780,7 @@ def output_df():
             if do_additional_files:
                 df.additional_dataset_output_paths = []
                 for additional_file in df.additional_dataset_files:
-                    additional_output_file = os.path.splitext(additional_file)[0]+append_string
+                    additional_output_file = os.path.join(os.path.dirname(df.group_path), os.path.splitext(additional_file)[0]+append_string)
                     df.additional_dataset_output_paths.append(additional_output_file)
                 additional_output_path_lists.append(copy.copy(df.additional_dataset_output_paths))
                 additional_dataset_masks.append(selected)
@@ -797,7 +801,7 @@ def output_df():
         if do_additional_files:
             df.additional_dataset_output_paths = []
             for additional_file in df.additional_dataset_files:
-                additional_output_file = os.path.splitext(additional_file)[0] + append_string
+                additional_output_file = os.path.join(os.path.dirname(df.group_path), os.path.splitext(additional_file)[0] + append_string)
                 df.additional_dataset_output_paths.append(additional_output_file)
             additional_output_path_lists.append(copy.copy(df.additional_dataset_output_paths))
             additional_dataset_masks.append(remainder)
