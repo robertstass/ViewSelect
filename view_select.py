@@ -1293,60 +1293,61 @@ if __name__ == "__main__":
 
     # Buttons
     plt.subplots_adjust(bottom=0.3)
-    as_button_ax = fig.add_axes([0.1, 0.02, 0.13, 0.07])  # [left, bottom, width, height]
+    plt.subplots_adjust(left=0.18)
+    as_button_ax = fig.add_axes([0.18, 0.08, 0.13, 0.07])  # [left, bottom, width, height]
     p.as_button = plt.Button(as_button_ax, 'Save selection')
     p.as_button.on_clicked(add_selection)
     p.as_button.set_active(False)
 
-    ag_button_ax = fig.add_axes([0.25, 0.02, 0.13, 0.07])  # [left, bottom, width, height]
+    ag_button_ax = fig.add_axes([0.33, 0.08, 0.13, 0.07])  # [left, bottom, width, height]
     p.ag_button = plt.Button(ag_button_ax, 'New group')
     p.ag_button.on_clicked(add_selection_group)
     p.ag_button.set_active(False)
 
-    u_button_ax = fig.add_axes([0.40, 0.02, 0.13, 0.07])  # [left, bottom, width, height]
+    u_button_ax = fig.add_axes([0.48, 0.08, 0.13, 0.07])  # [left, bottom, width, height]
     p.u_button = plt.Button(u_button_ax, 'Undo')
     p.u_button.on_clicked(undo)
     p.u_button.set_active(False)
 
-    f_button_ax = fig.add_axes([0.55, 0.02, 0.13, 0.07])  # [left, bottom, width, height]
+    f_button_ax = fig.add_axes([0.63, 0.08, 0.13, 0.07])  # [left, bottom, width, height]
     p.f_button = plt.Button(f_button_ax, 'Finish')
     p.f_button.on_clicked(finish)
     p.f_button.set_active(False)
 
     github_text = plt.text(0.995, 0.01, "github.com/robertstass/ViewSelect", color='grey', fontsize='medium', horizontalalignment='right', verticalalignment='bottom', transform=fig.transFigure)
 
-    rot_neg_button_ax = fig.add_axes([0.19, 0.11, 0.04, 0.07])  # [left, bottom, width, height]
+    rot_neg_button_ax = fig.add_axes([0.02, 0.70, 0.04, 0.07])  # [left, bottom, width, height]
     p.rot_neg_button = plt.Button(rot_neg_button_ax, '-rot')
     p.rot_neg_button.on_clicked(lambda event: rotate_plot_button_event(event, 'rot', -p.angle_step, file_picker_queue, p))
     p.rot_neg_button.set_active(False)
 
-    rot_pos_button_ax = fig.add_axes([0.24, 0.11, 0.04, 0.07])  # [left, bottom, width, height]
+    rot_pos_button_ax = fig.add_axes([0.07, 0.70, 0.04, 0.07])  # [left, bottom, width, height]
     p.rot_pos_button = plt.Button(rot_pos_button_ax, '+rot')
     p.rot_pos_button.on_clicked(lambda event: rotate_plot_button_event(event, 'rot', p.angle_step, file_picker_queue, p))
     p.rot_pos_button.set_active(False)
-    p.rot_text = plt.text(0.1, 0.14, 'Rot(z) %d°' % p.rot, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
+    p.rot_text = plt.text(0.025, 0.82, 'Rot(z) %d°' % p.rot, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
 
-    tilt_neg_button_ax = fig.add_axes([0.44, 0.11, 0.04, 0.07])  # [left, bottom, width, height]
+    tilt_neg_button_ax = fig.add_axes([0.02, 0.5, 0.04, 0.07])  # [left, bottom, width, height]
     p.tilt_neg_button = plt.Button(tilt_neg_button_ax, '-tilt')
     p.tilt_neg_button.on_clicked(lambda event: rotate_plot_button_event(event, 'tilt', -p.angle_step, file_picker_queue, p))
     p.tilt_neg_button.set_active(False)
 
-    tilt_pos_button_ax = fig.add_axes([0.49, 0.11, 0.04, 0.07])  # [left, bottom, width, height]
+    tilt_pos_button_ax = fig.add_axes([0.07, 0.5, 0.04, 0.07])  # [left, bottom, width, height]
     p.tilt_pos_button = plt.Button(tilt_pos_button_ax, '+tilt')
     p.tilt_pos_button.on_clicked(lambda event: rotate_plot_button_event(event, 'tilt', p.angle_step, file_picker_queue, p))
     p.tilt_pos_button.set_active(False)
-    p.tilt_text = plt.text(0.35, 0.14, 'Tilt(y) %d°' % p.tilt, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
+    p.tilt_text = plt.text(0.025, 0.62, 'Tilt(y) %d°' % p.tilt, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
 
-    psi_neg_button_ax = fig.add_axes([0.69, 0.11, 0.04, 0.07])  # [left, bottom, width, height]
+    psi_neg_button_ax = fig.add_axes([0.02, 0.3, 0.04, 0.07])  # [left, bottom, width, height]
     p.psi_neg_button = plt.Button(psi_neg_button_ax, '-psi')
     p.psi_neg_button.on_clicked(lambda event: rotate_plot_button_event(event, 'psi', -p.angle_step, file_picker_queue, p))
     p.psi_neg_button.set_active(False)
 
-    psi_pos_button_ax = fig.add_axes([0.74, 0.11, 0.04, 0.07])  # [left, bottom, width, height]
+    psi_pos_button_ax = fig.add_axes([0.07, 0.3, 0.04, 0.07])  # [left, bottom, width, height]
     p.psi_pos_button = plt.Button(psi_pos_button_ax, '+psi')
     p.psi_pos_button.on_clicked(lambda event: rotate_plot_button_event(event, 'psi', p.angle_step, file_picker_queue, p))
     p.psi_pos_button.set_active(False)
-    p.psi_text = plt.text(0.6, 0.14, 'Psi(z) %d°' % p.psi, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
+    p.psi_text = plt.text(0.025, 0.42, 'Psi(z) %d°' % p.psi, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
 
     p.euler_buttons = [p.rot_neg_button, p.rot_pos_button, p.tilt_neg_button, p.tilt_pos_button, p.psi_neg_button, p.psi_pos_button]
     
@@ -1354,7 +1355,7 @@ if __name__ == "__main__":
 
     # Radio button labels
     p.radio_labels = ['Group %d' % (i+1) for i in range(0,p.max_groups)]
-    p.axRadio = plt.axes([0.815, 0.05, 0.4, 0.9])
+    p.axRadio = plt.axes([0.82, 0.05, 0.4, 0.9])
     p.axRadio.axis('off')
     p.radio_buttons = RadioButtons(p.axRadio, p.radio_labels, activecolor='k')
     p.radio_buttons.on_clicked(radiobuttonclick)
