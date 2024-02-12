@@ -276,7 +276,6 @@ class CryoDatafile:
                 error_msg = 'Error: When supplying a .csg file, the corresponding .cs file (%s) must be present in the same directory.' % (cs)
                 print_text(error_msg, color='red')
                 raise OSError(error_msg)
-        print(self.additional_dataset_files)
         self.dataset_path = cs
 
     def load_cs(self, file_path):
@@ -1320,6 +1319,8 @@ if __name__ == "__main__":
 
     github_text = plt.text(0.995, 0.01, "github.com/robertstass/ViewSelect", color='grey', fontsize='medium', horizontalalignment='right', verticalalignment='bottom', transform=fig.transFigure)
 
+    p.rot_text = plt.text(0.025, 0.88, 'Rotate plot', horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
+
     rot_neg_button_ax = fig.add_axes([0.02, 0.70, 0.04, 0.07])  # [left, bottom, width, height]
     p.rot_neg_button = plt.Button(rot_neg_button_ax, '-rot')
     p.rot_neg_button.on_clicked(lambda event: rotate_plot_button_event(event, 'rot', -p.angle_step, file_picker_queue, p))
@@ -1329,7 +1330,7 @@ if __name__ == "__main__":
     p.rot_pos_button = plt.Button(rot_pos_button_ax, '+rot')
     p.rot_pos_button.on_clicked(lambda event: rotate_plot_button_event(event, 'rot', p.angle_step, file_picker_queue, p))
     p.rot_pos_button.set_active(False)
-    p.rot_text = plt.text(0.025, 0.82, 'Rot(z) %d°' % p.rot, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
+    p.rot_text = plt.text(0.025, 0.81, 'Rot(z) %d°' % p.rot, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
 
     tilt_neg_button_ax = fig.add_axes([0.02, 0.5, 0.04, 0.07])  # [left, bottom, width, height]
     p.tilt_neg_button = plt.Button(tilt_neg_button_ax, '-tilt')
@@ -1340,7 +1341,7 @@ if __name__ == "__main__":
     p.tilt_pos_button = plt.Button(tilt_pos_button_ax, '+tilt')
     p.tilt_pos_button.on_clicked(lambda event: rotate_plot_button_event(event, 'tilt', p.angle_step, file_picker_queue, p))
     p.tilt_pos_button.set_active(False)
-    p.tilt_text = plt.text(0.025, 0.62, 'Tilt(y) %d°' % p.tilt, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
+    p.tilt_text = plt.text(0.025, 0.61, 'Tilt(y) %d°' % p.tilt, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
 
     psi_neg_button_ax = fig.add_axes([0.02, 0.3, 0.04, 0.07])  # [left, bottom, width, height]
     p.psi_neg_button = plt.Button(psi_neg_button_ax, '-psi')
@@ -1351,7 +1352,7 @@ if __name__ == "__main__":
     p.psi_pos_button = plt.Button(psi_pos_button_ax, '+psi')
     p.psi_pos_button.on_clicked(lambda event: rotate_plot_button_event(event, 'psi', p.angle_step, file_picker_queue, p))
     p.psi_pos_button.set_active(False)
-    p.psi_text = plt.text(0.025, 0.42, 'Psi(z) %d°' % p.psi, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
+    p.psi_text = plt.text(0.025, 0.41, 'Psi(z) %d°' % p.psi, horizontalalignment='left', verticalalignment='center', transform=fig.transFigure)
 
     p.euler_buttons = [p.rot_neg_button, p.rot_pos_button, p.tilt_neg_button, p.tilt_pos_button, p.psi_neg_button, p.psi_pos_button]
     
