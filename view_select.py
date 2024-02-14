@@ -946,26 +946,26 @@ def rotate_plot_button_event(event, euler_name, angle, queue, p):
     psi_max = 180.0
     if euler_name == 'rot':
         rot += angle
-        if rot <= rot_min:
+        if rot < rot_min:
             rot = rot_min
             print_text('Rot must be within %d and %d degrees.' % (rot_min, rot_max))
-        elif rot >= rot_max:
+        elif rot > rot_max:
             rot = rot_max
             print_text('Rot must be within %d and %d degrees.' % (rot_min, rot_max))
     elif euler_name == 'tilt':
         tilt += angle
-        if tilt <= tilt_min:
+        if tilt < tilt_min:
             tilt = tilt_min
             print_text('Tilt must be within %d and %d degrees.' % (tilt_min, tilt_max))
-        elif tilt >= tilt_max:
+        elif tilt > tilt_max:
             tilt = tilt_max
             print_text('Tilt must be within %d and %d degrees.' % (tilt_min, tilt_max))
     elif euler_name == 'psi':
         psi += angle
-        if psi <= psi_min:
+        if psi < psi_min:
             psi = psi_min
             print_text('Psi must be within %d and %d degrees.' % (psi_min, psi_max))
-        elif psi >= psi_max:
+        elif psi > psi_max:
             psi = psi_max
             print_text('Psi must be within %d and %d degrees.' % (psi_min, psi_max))
     else:
