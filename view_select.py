@@ -114,8 +114,9 @@ class ArgumentParser():
             hard to find at the 2D classification stage. The 3D refinement stage can sometimes help but it can be difficult
             to relate hotspots in a viewing direction distribution plot back to the 2D classes. There is a partial solution
             to this which is to generate a .bild file for viewing in chimera using pyem (https://github.com/asarnow/pyem).
-            However, "View Select" allows the user to select particles from the plot that can then be used for further 2D classification
-            and/or particle picking with tools like Topaz.
+            Also native .bild file creation has now been added to cryosparc v4.4+. However, "View Select" allows the user 
+            to select particles from the plot that can then be used for further 2D classification and/or particle picking 
+            with tools like Topaz.
             
             Further details:
             To use, draw one or more circles on the plot. If you click "New group" you can then draw more circles that are ultimately
@@ -133,7 +134,7 @@ class ArgumentParser():
             direction plot. It is helpful for selecting hotspots that have become distorted at the top and bottom of the plot.
             
             The colors used can be customized for accessibility or aesthetic reasons using the --plot_cmap and --group_cmap command
-            line options.
+            line options. --cmap_limit can be set to apply a constant scale to the plot colormaps.
             
             Written by Robert Stass, Bowden group, STRUBI/OPIC (2024)
             ''')
@@ -144,6 +145,7 @@ class ArgumentParser():
         add('--dont_save_image', action='store_true', help='Stop the script outputting an image at the end.')
         add('--plot_cmap', default=default_plot_cmap, help='Matplotlib colormap for the hexbin plot. (default: %(default)s)')
         add('--group_cmap', default=default_group_cmap, help='Matplotlib colormap for the selection group colors. (default: %(default)s)')
+        add('--cmap_limit', default=None, type=int, help='An optional upper limit for the number of particles to scale the plot colors by (for comparison with other datasets).')
         add('input_dataset_path', nargs='?', default=None, help='File path of an exported cryosparc .csg/.cs file or a relion star file. Can leave blank to open a file in the GUI.')
 
         '''
@@ -1150,7 +1152,12 @@ def plot_data(p, plot_data_queue):
         if queue_readout == "Plot ready" or queue_readout == 'Plot rotated':
             print_text('Plotting...') if queue_readout == 'Plot ready' else None
             old_hb = p.hb if hasattr(p,'hb') else None
-            p.hb = p.ax.hexbin(p.az, p.el, gridsize=50, bins='log', cmap=p.plot_cmap)
+            vmin = None
+            vmax = None
+            if p.cmap_limit is not None:
+                vmin = 1
+                vmax = cmap_limit
+            p.hb = p.ax.hexbin(p.az, p.el, gridsize=50, bins='log', cmap=p.plot_cmap, vmin=vmin, vmax=vmax)
             if hasattr(p,'cb'):
                 p.cb.remove()
             old_hb.remove() if old_hb != None else None
@@ -1244,6 +1251,7 @@ if __name__ == "__main__":
     group_cmap_name = args.group_cmap #'tab10'
     plot_cmap_name = args.plot_cmap #'jet'
     group_cmap = cm.get_cmap(group_cmap_name)
+    cmap_limit = args.cmap_limit
 
     print('Starting GUI...')
     #Start GUI
@@ -1287,6 +1295,7 @@ if __name__ == "__main__":
     p.psi = 0.0
     p.angle_step = 90
     p.plot_cmap = plot_cmap_name
+    p.cmap_limit = cmap_limit
 
     p.ellipse_groups = []
     p.ellipse_groups.append([])

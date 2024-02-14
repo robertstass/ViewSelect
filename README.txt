@@ -41,8 +41,9 @@ in a preferred orientation problem. It is then optimal to try to enrich other vi
 hard to find at the 2D classification stage. The 3D refinement stage can sometimes help but it can be difficult
 to relate hotspots in a viewing direction distribution plot back to the 2D classes. There is a partial solution
 to this which is to generate a .bild file for viewing in chimera using pyem (https://github.com/asarnow/pyem).
-However, "View Select" allows the user to select particles from the plot that can then be used for further 2D
-classification and/or particle picking with tools like Topaz.
+Also native .bild file creation has now been added to cryosparc v4.4+. However, "View Select" allows the user to
+select particles from the plot that can then be used for further 2D classification and/or particle picking with tools
+like Topaz.
 
 Further details:
 To use, draw one or more circles on the plot. If you click "New group" you can then draw more circles that are ultimately
@@ -60,6 +61,6 @@ z, y and z axis respectively. These euler angles have the effect of rotating the
 direction plot. It is helpful for selecting hotspots that have become distorted at the top and bottom of the plot.
 
 The colors used can be customized for accessibility or aesthetic reasons using the --plot_cmap and --group_cmap command
-line options.
+line options. --cmap_limit can be set to apply a constant scale to the plot colormaps.
 
 Written by Robert Stass, Bowden group, STRUBI/OPIC (2024)
