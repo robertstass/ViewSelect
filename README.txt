@@ -35,6 +35,17 @@ pip install -r requirements.txt
 Then it can be run using
 "conda activate view_select" followed by "python view_select.py"
 
+On some HPC systems, the script can be sluggish due to high metadata traffic. It may therefore be better to containerize
+it using something like apptainer/singularity/docker. Below is an example using the included .def file.
+apptainer build view_select.sif view_select_apptainer.def
+Then add the following to your ~/.bashrc file.
+alias view_select.py="apptainer exec -B /exafs1,/well /path/to/ViewSelect/view_select.sif python /path/to/ViewSelect/view_select.py"
+Then restart the terminal or do source ~/.bashrc
+Then to run simply use:
+view_select.py
+(Remember to change /path/to to the relevant full path. The -B /exafs1,/well argument is to mount additional drives to
+the container. These will be specific to your system so edit as appropriate if needed.)
+
 Why do this?
 For small and/or featureless samples, it is common to get one or two views that dominate all others resulting
 in a preferred orientation problem. It is then optimal to try to enrich other views but these can sometimes be

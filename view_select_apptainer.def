@@ -1,0 +1,10 @@
+Bootstrap: docker
+From: python:3
+
+%environment
+export PATH="/usr/local/bin:/usr/bin:/bin:${PATH}"
+
+%post
+# Install any needed packages specified in requirements.txt
+pip install --no-cache-dir numpy matplotlib tk cryosparc-tools pyyaml starfile
+
