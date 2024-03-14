@@ -7,6 +7,8 @@ Separate .csg/.cs/.star files containing these particles are then saved that can
 Note that if you supply a .csg file, the corresponding .cs file must be present in the same directory.
 New .csg files are only output if a .csg file is input originally (Recommended as this makes re-importing easier).
 
+![Alt text](example_plot.png?raw=true "Example plot")
+
 Usage:
 
 For cryosparc, start by exporting particles from the output tab of a 3D refinement job (Actions -> Export).
